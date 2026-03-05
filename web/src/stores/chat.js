@@ -24,7 +24,7 @@ export const useChatStore = defineStore('chat', () => {
     loading.value = true
     try {
       const { data } = await chatAPI.sendPrompt(sessionId.value, prompt, agentConfigId.value)
-      messages.value.push({ role: 'model', text: data.response })
+      messages.value.push({ role: 'model', text: data.response, tokenUsage: data.token_usage ?? null })
       if (data.agent_name) agentName.value = data.agent_name
 
       // Persist pending name after first message creates the session doc

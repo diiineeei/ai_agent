@@ -39,6 +39,10 @@ export const feedbackAPI = {
   stats: () => http.get('/feedback/stats'),
 }
 
+export const suggestAPI = {
+  getQuestions: (sessionId) => http.get('/suggest-questions', { params: { session_id: sessionId } }),
+}
+
 export const agentConfigsAPI = {
   list: () => http.get('/agent-configs'),
   getById: (id) => http.get(`/agent-configs/${id}`),

@@ -11,11 +11,12 @@ import (
 )
 
 // factory is a constructor that creates a Skill instance with injected dependencies.
+// nil indicates a "seed-only" skill managed externally (e.g. contextual skills).
 type factory func() Skill
 
 type skillMeta struct {
 	description string
-	fn          factory
+	fn          factory // nil = seed-only, not loaded via registry
 }
 
 // SkillRegistry manages the lifecycle of skills: seeding defaults into MongoDB,
@@ -35,6 +36,26 @@ func NewSkillRegistry(skillRepo repository.SkillRepository) *SkillRegistry {
 // Register adds a named factory function. Call before Seed.
 func (r *SkillRegistry) Register(name, description string, f factory) {
 	r.entries[name] = skillMeta{description: description, fn: f}
+}
+
+// RegisterSeedOnly registers a skill for MongoDB seeding and management UI only.
+// The skill is NOT loaded via the registry; the caller manages instantiation.
+func (r *SkillRegistry) RegisterSeedOnly(name, description string) {
+	r.entries[name] = skillMeta{description: description, fn: nil}
+}
+
+// IsEnabled reports whether the named skill is globally enabled in MongoDB.
+func (r *SkillRegistry) IsEnabled(ctx context.Context, name string) bool {
+	enabled, err := r.skillRepo.ListEnabled(ctx)
+	if err != nil {
+		return false
+	}
+	for _, doc := range enabled {
+		if doc.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Seed upserts all registered skills into MongoDB using $setOnInsert,
@@ -66,6 +87,9 @@ func (r *SkillRegistry) LoadEnabled(ctx context.Context, a *agent.Agent) error {
 			log.Printf("WARNING: skill %q is enabled in DB but has no registered factory", doc.Name)
 			continue
 		}
+		if meta.fn == nil {
+			continue // seed-only / contextual skill, managed externally
+		}
 		skill := meta.fn()
 		if err := a.AddFunctionCall(skill.Declaration()); err != nil {
 			return fmt.Errorf("registering skill %q with agent: %w", doc.Name, err)
@@ -96,6 +120,9 @@ func (r *SkillRegistry) LoadByNames(ctx context.Context, a *agent.Agent, names [
 		if !ok {
 			log.Printf("WARNING: skill %q is enabled in DB but has no registered factory", doc.Name)
 			continue
+		}
+		if meta.fn == nil {
+			continue // seed-only / contextual skill, managed externally
 		}
 		skill := meta.fn()
 		if err := a.AddFunctionCall(skill.Declaration()); err != nil {

@@ -74,11 +74,37 @@ func (a *Agent) getTools() []*genai.Tool {
 	return []*genai.Tool{{FunctionDeclarations: declarations}}
 }
 
+// TokenUsage holds the token consumption data for a single agent interaction.
+type TokenUsage struct {
+	PromptTokens   int32 `json:"prompt_tokens"`
+	ResponseTokens int32 `json:"response_tokens"`
+	TotalTokens    int32 `json:"total_tokens"`
+}
+
+func (u TokenUsage) add(other TokenUsage) TokenUsage {
+	return TokenUsage{
+		PromptTokens:   u.PromptTokens + other.PromptTokens,
+		ResponseTokens: u.ResponseTokens + other.ResponseTokens,
+		TotalTokens:    u.TotalTokens + other.TotalTokens,
+	}
+}
+
+func usageFromResp(resp *genai.GenerateContentResponse) TokenUsage {
+	if resp.UsageMetadata == nil {
+		return TokenUsage{}
+	}
+	return TokenUsage{
+		PromptTokens:   resp.UsageMetadata.PromptTokenCount,
+		ResponseTokens: resp.UsageMetadata.CandidatesTokenCount,
+		TotalTokens:    resp.UsageMetadata.TotalTokenCount,
+	}
+}
+
 // Send processes the user prompt, handles function calling loop, and persists the session.
-func (a *Agent) Send(ctx context.Context, sessionID, prompt string) (string, error) {
+func (a *Agent) Send(ctx context.Context, sessionID, prompt string) (string, TokenUsage, error) {
 	history, err := a.loadHistory(ctx, sessionID)
 	if err != nil {
-		return "", err
+		return "", TokenUsage{}, err
 	}
 
 	config := &genai.GenerateContentConfig{
@@ -90,43 +116,45 @@ func (a *Agent) Send(ctx context.Context, sessionID, prompt string) (string, err
 
 	chat, err := a.client.Chats.Create(ctx, a.model, config, history)
 	if err != nil {
-		return "", fmt.Errorf("creating chat session: %w", err)
+		return "", TokenUsage{}, fmt.Errorf("creating chat session: %w", err)
 	}
 
 	resp, err := chat.SendMessage(ctx, genai.Part{Text: prompt})
 	if err != nil {
-		return "", fmt.Errorf("sending message: %w", err)
+		return "", TokenUsage{}, fmt.Errorf("sending message: %w", err)
 	}
 
-	text, err := a.processResponse(ctx, chat, resp)
+	text, usage, err := a.processResponse(ctx, chat, resp)
 	if err != nil {
-		return "", err
+		return "", TokenUsage{}, err
 	}
 
 	if err := a.saveHistory(ctx, sessionID, chat.History(true)); err != nil {
-		return "", err
+		return "", TokenUsage{}, err
 	}
 
-	return text, nil
+	return text, usage, nil
 }
 
 // processResponse handles function calls recursively until the model returns text.
-func (a *Agent) processResponse(ctx context.Context, chat *genai.Chat, resp *genai.GenerateContentResponse) (string, error) {
+func (a *Agent) processResponse(ctx context.Context, chat *genai.Chat, resp *genai.GenerateContentResponse) (string, TokenUsage, error) {
+	usage := usageFromResp(resp)
+
 	calls := resp.FunctionCalls()
 	if len(calls) == 0 {
-		return resp.Text(), nil
+		return resp.Text(), usage, nil
 	}
 
 	parts := make([]*genai.Part, 0, len(calls))
 	for _, call := range calls {
 		fn, ok := a.functionsMap[call.Name]
 		if !ok {
-			return "", fmt.Errorf("model requested unknown function %q", call.Name)
+			return "", TokenUsage{}, fmt.Errorf("model requested unknown function %q", call.Name)
 		}
 
 		result, err := fn.FunctionCall(ctx, call.Args)
 		if err != nil {
-			return "", fmt.Errorf("executing function %q: %w", call.Name, err)
+			return "", TokenUsage{}, fmt.Errorf("executing function %q: %w", call.Name, err)
 		}
 
 		parts = append(parts, &genai.Part{
@@ -139,10 +167,11 @@ func (a *Agent) processResponse(ctx context.Context, chat *genai.Chat, resp *gen
 
 	nextResp, err := chat.Send(ctx, parts...)
 	if err != nil {
-		return "", fmt.Errorf("sending function responses: %w", err)
+		return "", TokenUsage{}, fmt.Errorf("sending function responses: %w", err)
 	}
 
-	return a.processResponse(ctx, chat, nextResp)
+	text, nextUsage, err := a.processResponse(ctx, chat, nextResp)
+	return text, usage.add(nextUsage), err
 }
 
 // GetSession returns the conversation history for a session.

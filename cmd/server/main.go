@@ -69,6 +69,7 @@ func main() {
 	registry.Register("search_documents", "Realiza busca semântica nos documentos enviados pelo usuário.", func() skills.Skill {
 		return skills.NewSearchDocumentsSkill(fileRepo, embedder)
 	})
+	registry.RegisterSeedOnly("suggest_questions", "Sugere perguntas relevantes que o usuário pode fazer ao assistente com base no histórico da conversa e nas características do agente.")
 
 	// Seed default skills into MongoDB (idempotent)
 	if err := registry.Seed(ctx); err != nil {
@@ -85,7 +86,7 @@ func main() {
 			Name:              "Padrão",
 			SystemInstruction: "Você é um assistente útil. Responda sempre em português.",
 			Model:             defaultModel,
-			EnabledSkills:     []string{"weather", "search_documents"},
+			EnabledSkills:     []string{"weather", "search_documents", "suggest_questions"},
 		})
 		if err != nil {
 			log.Fatalf("seed de agent config: %v", err)
@@ -98,6 +99,7 @@ func main() {
 	skillHandler := handler.NewSkillHandler(skillRepo)
 	agentConfigHandler := handler.NewAgentConfigHandler(agentConfigRepo, geminiClient)
 	feedbackHandler := handler.NewFeedbackHandler(feedbackRepo)
+	suggestHandler := handler.NewSuggestHandler(geminiClient, sessionRepo, agentConfigRepo)
 
 	// Routes (Go 1.22+ ServeMux with method+pattern)
 	mux := http.NewServeMux()
@@ -114,6 +116,7 @@ func main() {
 	mux.HandleFunc("POST /feedback", feedbackHandler.Submit)
 	mux.HandleFunc("GET /feedback", feedbackHandler.ForSession)
 	mux.HandleFunc("GET /feedback/stats", feedbackHandler.Stats)
+	mux.HandleFunc("GET /suggest-questions", suggestHandler.Suggest)
 	mux.HandleFunc("GET /agent-configs", agentConfigHandler.List)
 	mux.HandleFunc("POST /agent-configs", agentConfigHandler.Create)
 	mux.HandleFunc("POST /agent-configs/improve-instruction", agentConfigHandler.ImproveInstruction)

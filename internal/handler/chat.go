@@ -11,6 +11,15 @@ import (
 	"google.golang.org/genai"
 )
 
+func containsSkill(list []string, name string) bool {
+	for _, s := range list {
+		if s == name {
+			return true
+		}
+	}
+	return false
+}
+
 type ChatHandler struct {
 	geminiClient    *genai.Client
 	sessionRepo     repository.SessionRepository
@@ -84,16 +93,26 @@ func (h *ChatHandler) SendPrompt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := a.Send(ctx, req.SessionID, req.Prompt)
+	// Inject contextual skills that require session context at instantiation time.
+	if containsSkill(cfg.EnabledSkills, "suggest_questions") && h.registry.IsEnabled(ctx, "suggest_questions") {
+		sq := skills.NewSuggestQuestionsSkill(h.geminiClient, h.sessionRepo, *cfg, req.SessionID)
+		if err := a.AddFunctionCall(sq.Declaration()); err != nil {
+			jsonError(w, "erro ao registrar skill suggest_questions: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	response, usage, err := a.Send(ctx, req.SessionID, req.Prompt)
 	if err != nil {
 		jsonError(w, "erro ao processar prompt: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	jsonResponse(w, http.StatusOK, map[string]string{
-		"session_id": req.SessionID,
-		"response":   response,
-		"agent_name": cfg.Name,
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"session_id":  req.SessionID,
+		"response":    response,
+		"agent_name":  cfg.Name,
+		"token_usage": usage,
 	})
 }
 

@@ -29,6 +29,14 @@
         <v-tooltip activator="parent" location="bottom">Nova sessão</v-tooltip>
       </v-btn>
       <v-btn
+        icon size="small" variant="text"
+        :color="showTokens ? 'primary' : undefined"
+        @click="showTokens = !showTokens"
+      >
+        <v-icon size="18">mdi-counter</v-icon>
+        <v-tooltip activator="parent" location="bottom">{{ showTokens ? 'Ocultar tokens' : 'Mostrar tokens consumidos' }}</v-tooltip>
+      </v-btn>
+      <v-btn
         v-if="store.messages.length > 0"
         icon size="small" variant="text" color="error"
         @click="clearDialog = true"
@@ -91,8 +99,8 @@
             <v-sheet rounded="xl" class="border px-4 py-3">
               <div class="markdown-body text-body-1" v-html="renderMarkdown(msg.text)" />
             </v-sheet>
-            <!-- Rating buttons -->
-            <div class="d-flex gap-1 mt-1 pl-1">
+            <!-- Rating buttons + token info -->
+            <div class="d-flex align-center gap-1 mt-1 pl-1">
               <v-btn
                 icon size="x-small" variant="text"
                 :color="ratings[modelSeqOf(i)] === 'up' ? 'success' : undefined"
@@ -109,6 +117,18 @@
               >
                 <v-icon size="15">{{ ratings[modelSeqOf(i)] === 'down' ? 'mdi-thumb-down' : 'mdi-thumb-down-outline' }}</v-icon>
               </v-btn>
+              <v-chip
+                v-if="showTokens && msg.tokenUsage"
+                size="x-small" variant="text"
+                class="token-chip text-disabled ml-1"
+              >
+                <v-icon start size="11">mdi-lightning-bolt</v-icon>
+                {{ msg.tokenUsage.total_tokens.toLocaleString() }} tokens
+                <v-tooltip activator="parent" location="top">
+                  Entrada: {{ msg.tokenUsage.prompt_tokens.toLocaleString() }} &nbsp;·&nbsp;
+                  Saída: {{ msg.tokenUsage.response_tokens.toLocaleString() }}
+                </v-tooltip>
+              </v-chip>
             </div>
           </div>
         </div>
@@ -156,6 +176,25 @@
         </div>
       </v-slide-y-reverse-transition>
 
+      <!-- Sugestões de perguntas -->
+      <v-slide-y-reverse-transition>
+        <div v-if="suggestions.length > 0 && !store.loading" class="mb-2 suggestions-row">
+          <v-chip
+            v-for="(q, idx) in suggestions"
+            :key="idx"
+            size="small"
+            variant="tonal"
+            color="primary"
+            class="suggestion-chip flex-shrink-0"
+            @click="applySuggestion(q)"
+          >{{ q }}</v-chip>
+          <v-btn icon size="x-small" variant="text" class="flex-shrink-0 ml-1" @click="suggestions = []">
+            <v-icon size="14">mdi-close</v-icon>
+            <v-tooltip activator="parent" location="top">Fechar sugestões</v-tooltip>
+          </v-btn>
+        </div>
+      </v-slide-y-reverse-transition>
+
       <!-- Input card -->
       <input ref="fileInput" type="file" accept=".txt,.pdf" style="display:none" @change="onFileSelected" />
       <v-card
@@ -173,7 +212,7 @@
           max-rows="6"
           hide-details
           density="compact"
-          class="px-2 pt-2 pb-0"
+          class="px-2 pt-2 pb-0 messages-input"
           @keydown.enter.exact.prevent="sendMessage"
           @keydown.shift.enter.exact="input += '\n'"
           @focus="inputFocused = true"
@@ -349,7 +388,7 @@
 import { ref, watch, nextTick, onMounted } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
-import { chatAPI, filesAPI, feedbackAPI } from '@/services/api'
+import { chatAPI, filesAPI, feedbackAPI, suggestAPI } from '@/services/api'
 import { renderMarkdown } from '@/utils/markdown'
 
 const store = useChatStore()
@@ -365,6 +404,9 @@ const uploadStatus = ref(null)
 
 // ratings: { [messageIndex]: 'up' | 'down' }
 const ratings = ref({})
+const showTokens = ref(false)
+
+const suggestions = ref([])
 
 const clearDialog      = ref(false)
 const sessionDialog    = ref(false)
@@ -389,8 +431,18 @@ onMounted(async () => {
   scrollToBottom()
 })
 
-watch(() => store.messages.length, scrollToBottom)
-watch(() => store.sessionId, () => { ratings.value = {} })
+watch(() => store.messages.length, () => {
+  scrollToBottom()
+  // Busca sugestões quando o modelo responde (última mensagem é do modelo)
+  const msgs = store.messages
+  if (msgs.length > 0 && msgs[msgs.length - 1].role === 'model') {
+    fetchSuggestions()
+  }
+})
+watch(() => store.sessionId, () => {
+  ratings.value = {}
+  suggestions.value = []
+})
 
 // ── Messaging ──────────────────────────────────────────
 async function sendMessage() {
@@ -410,6 +462,8 @@ async function loadHistory() {
 
 async function doClear() {
   await store.clearHistory()
+  ratings.value = {}
+  suggestions.value = []
   clearDialog.value = false
 }
 
@@ -533,6 +587,24 @@ function scrollToBottom() {
     if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
   })
 }
+
+// ── Sugestões de perguntas ──────────────────────────────
+async function fetchSuggestions() {
+  if (!store.sessionId) return
+  try {
+    const { data } = await suggestAPI.getQuestions(store.sessionId)
+    suggestions.value = data?.questions ?? []
+  } catch { /* non-critical */ }
+}
+
+function applySuggestion(question) {
+  input.value = question
+  suggestions.value = []
+  nextTick(() => {
+    const textarea = document.querySelector('.messages-input textarea')
+    textarea?.focus()
+  })
+}
 </script>
 
 <style scoped>
@@ -560,6 +632,21 @@ function scrollToBottom() {
   0%, 80%, 100% { transform: scale(.8); opacity: .4; }
   40%           { transform: scale(1.2); opacity: 1;  }
 }
+
+/* Token chip */
+.token-chip { font-size: 10px !important; opacity: .7; }
+
+/* Suggestion chips row */
+.suggestions-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.suggestions-row::-webkit-scrollbar { display: none; }
+.suggestion-chip { cursor: pointer; white-space: nowrap; flex-shrink: 0; }
 
 /* Markdown inside model bubble */
 :deep(.markdown-body) {
