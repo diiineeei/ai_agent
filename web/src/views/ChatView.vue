@@ -30,6 +30,14 @@
       </v-btn>
       <v-btn
         icon size="small" variant="text"
+        :color="ttsEnabled ? 'primary' : undefined"
+        @click="toggleTts"
+      >
+        <v-icon size="18">{{ ttsEnabled ? 'mdi-volume-high' : 'mdi-volume-off' }}</v-icon>
+        <v-tooltip activator="parent" location="bottom">{{ ttsEnabled ? 'Desativar leitura em voz alta' : 'Ativar leitura em voz alta' }}</v-tooltip>
+      </v-btn>
+      <v-btn
+        icon size="small" variant="text"
         :color="showTokens ? 'primary' : undefined"
         @click="showTokens = !showTokens"
       >
@@ -205,7 +213,7 @@
       >
         <v-textarea
           v-model="input"
-          placeholder="Digite sua mensagem…"
+          :placeholder="listening ? 'Ouvindo…' : 'Digite sua mensagem…'"
           variant="plain"
           rows="1"
           auto-grow
@@ -227,6 +235,19 @@
           >
             <v-icon size="20">mdi-paperclip</v-icon>
             <v-tooltip activator="parent" location="top">Anexar arquivo (.txt, .pdf)</v-tooltip>
+          </v-btn>
+          <v-btn
+            v-if="speechSupported"
+            icon size="small" variant="text"
+            :color="listening ? (micAutoSend ? 'warning' : 'error') : (micAutoSend ? 'warning' : undefined)"
+            :class="{ 'mic-pulse': listening }"
+            @click="toggleListening"
+            @dblclick.prevent="toggleMicMode"
+          >
+            <v-icon size="20">{{ listening ? 'mdi-microphone' : 'mdi-microphone-outline' }}</v-icon>
+            <v-tooltip activator="parent" location="top">
+              {{ listening ? 'Parar gravação' : micAutoSend ? 'Falar e enviar automaticamente (duplo clique para desativar)' : 'Falar mensagem (duplo clique = envio automático)' }}
+            </v-tooltip>
           </v-btn>
           <v-spacer />
           <span class="text-caption text-disabled mr-3 d-none d-sm-inline">Shift+Enter = nova linha</span>
@@ -403,8 +424,23 @@ const uploading    = ref(false)
 const uploadStatus = ref(null)
 
 // ratings: { [messageIndex]: 'up' | 'down' }
-const ratings = ref({})
+const ratings    = ref({})
 const showTokens = ref(false)
+
+// ── Voice ──────────────────────────────────────────────
+const listening      = ref(false)
+const micAutoSend    = ref(false)
+const ttsEnabled     = ref(false)
+const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+
+let recognition = null
+if (speechSupported) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+  recognition = new SR()
+  recognition.lang = 'pt-BR'
+  recognition.continuous = false
+  recognition.interimResults = true
+}
 
 const suggestions = ref([])
 
@@ -433,15 +469,17 @@ onMounted(async () => {
 
 watch(() => store.messages.length, () => {
   scrollToBottom()
-  // Busca sugestões quando o modelo responde (última mensagem é do modelo)
   const msgs = store.messages
   if (msgs.length > 0 && msgs[msgs.length - 1].role === 'model') {
     fetchSuggestions()
+    speak(msgs[msgs.length - 1].text)
   }
 })
 watch(() => store.sessionId, () => {
   ratings.value = {}
   suggestions.value = []
+  window.speechSynthesis?.cancel()
+  if (listening.value) recognition?.stop()
 })
 
 // ── Messaging ──────────────────────────────────────────
@@ -588,6 +626,56 @@ function scrollToBottom() {
   })
 }
 
+// ── Voz ────────────────────────────────────────────────
+function toggleListening() {
+  if (!recognition) return
+  if (listening.value) {
+    recognition.stop()
+    return
+  }
+
+  let finalTranscript = ''
+
+  recognition.onstart = () => { listening.value = true }
+
+  recognition.onresult = (e) => {
+    let interim = ''
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript
+      if (e.results[i].isFinal) finalTranscript += t
+      else interim = t
+    }
+    input.value = finalTranscript || interim
+  }
+
+  recognition.onend = () => {
+    listening.value = false
+    if (micAutoSend.value && finalTranscript.trim()) sendMessage()
+  }
+
+  recognition.onerror = () => { listening.value = false }
+
+  recognition.start()
+}
+
+function toggleMicMode() {
+  micAutoSend.value = !micAutoSend.value
+}
+
+function toggleTts() {
+  ttsEnabled.value = !ttsEnabled.value
+  if (!ttsEnabled.value) window.speechSynthesis.cancel()
+}
+
+function speak(text) {
+  if (!ttsEnabled.value || !text) return
+  window.speechSynthesis.cancel()
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.lang = 'pt-BR'
+  utterance.rate = 1.05
+  window.speechSynthesis.speak(utterance)
+}
+
 // ── Sugestões de perguntas ──────────────────────────────
 async function fetchSuggestions() {
   if (!store.sessionId) return
@@ -632,6 +720,13 @@ function applySuggestion(question) {
   0%, 80%, 100% { transform: scale(.8); opacity: .4; }
   40%           { transform: scale(1.2); opacity: 1;  }
 }
+
+/* Mic pulse animation */
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--v-theme-error), .4); }
+  50%       { box-shadow: 0 0 0 6px rgba(var(--v-theme-error), 0); }
+}
+.mic-pulse { animation: mic-pulse 1.2s ease-in-out infinite; border-radius: 50%; }
 
 /* Token chip */
 .token-chip { font-size: 10px !important; opacity: .7; }
