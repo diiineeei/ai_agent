@@ -100,6 +100,7 @@ func main() {
 	// Routes (Go 1.22+ ServeMux with method+pattern)
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /prompt", chatHandler.SendPrompt)
+	mux.HandleFunc("GET /sessions", chatHandler.ListSessions)
 	mux.HandleFunc("GET /history", chatHandler.GetHistory)
 	mux.HandleFunc("DELETE /history", chatHandler.DeleteHistory)
 	mux.HandleFunc("POST /files", fileHandler.Upload)

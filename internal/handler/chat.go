@@ -113,6 +113,16 @@ func (h *ChatHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, history)
 }
 
+// ListSessions handles GET /sessions — returns all session summaries sorted by last activity.
+func (h *ChatHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
+	sessions, err := h.sessionRepo.ListAll(r.Context())
+	if err != nil {
+		jsonError(w, "erro ao listar sessões: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonResponse(w, http.StatusOK, sessions)
+}
+
 // DeleteHistory handles DELETE /history — clears the session history.
 func (h *ChatHandler) DeleteHistory(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("session_id")

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"ai_agent/internal/model"
 
@@ -17,12 +18,14 @@ type SessionRepository interface {
 	Delete(ctx context.Context, sessionID string) error
 	GetAgentConfigID(ctx context.Context, sessionID string) (string, error)
 	SetAgentConfigID(ctx context.Context, sessionID, agentConfigID string) error
+	ListAll(ctx context.Context) ([]model.SessionSummary, error)
 }
 
 type sessionDoc struct {
 	ID            string          `bson:"_id"`
 	History       []model.Content `bson:"history"`
 	AgentConfigID string          `bson:"agent_config_id,omitempty"`
+	UpdatedAt     time.Time       `bson:"updated_at,omitempty"`
 }
 
 type MongoSessionRepository struct {
@@ -35,7 +38,10 @@ func NewMongoSessionRepository(coll *mongo.Collection) *MongoSessionRepository {
 
 func (r *MongoSessionRepository) Save(ctx context.Context, sessionID string, history []model.Content) error {
 	filter := bson.M{"_id": sessionID}
-	update := bson.M{"$set": bson.M{"history": history}}
+	update := bson.M{"$set": bson.M{
+		"history":    history,
+		"updated_at": time.Now(),
+	}}
 	_, err := r.coll.UpdateOne(ctx, filter, update, options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		return fmt.Errorf("saving session %q: %w", sessionID, err)
@@ -83,4 +89,30 @@ func (r *MongoSessionRepository) SetAgentConfigID(ctx context.Context, sessionID
 		return fmt.Errorf("setting agent config id for session %q: %w", sessionID, err)
 	}
 	return nil
+}
+
+func (r *MongoSessionRepository) ListAll(ctx context.Context) ([]model.SessionSummary, error) {
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$project", Value: bson.D{
+			{Key: "agent_config_id", Value: 1},
+			{Key: "updated_at", Value: 1},
+			{Key: "message_count", Value: bson.D{
+				{Key: "$size", Value: bson.D{
+					{Key: "$ifNull", Value: bson.A{"$history", bson.A{}}},
+				}},
+			}},
+		}}},
+		bson.D{{Key: "$sort", Value: bson.D{
+			{Key: "updated_at", Value: -1},
+		}}},
+	}
+	cursor, err := r.coll.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("listing sessions: %w", err)
+	}
+	var summaries []model.SessionSummary
+	if err := cursor.All(ctx, &summaries); err != nil {
+		return nil, fmt.Errorf("decoding sessions: %w", err)
+	}
+	return summaries, nil
 }

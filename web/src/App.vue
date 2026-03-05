@@ -6,17 +6,23 @@
       :temporary="mobile"
       :rail="!mobile && rail"
     >
-      <v-list-item prepend-icon="mdi-robot" title="AI Agent" nav>
-        <template #append>
-          <v-btn
-            v-if="!mobile"
-            :icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
-            variant="text"
-            size="small"
-            @click="rail = !rail"
-          />
-        </template>
-      </v-list-item>
+      <!-- Header customizado: controle total sobre rail vs expandido -->
+      <div
+        class="d-flex align-center px-2"
+        style="height: 56px; gap: 4px;"
+        :style="rail && !mobile ? 'cursor:pointer; justify-content:center' : ''"
+        @click="rail && !mobile ? (rail = false) : undefined"
+      >
+        <v-icon color="primary" size="22">mdi-robot</v-icon>
+        <span v-if="!rail" class="text-body-1 font-weight-medium ml-1 flex-grow-1">AI Agent</span>
+        <v-btn
+          v-if="!mobile && !rail"
+          icon="mdi-chevron-left"
+          variant="text"
+          size="small"
+          @click.stop="rail = true"
+        />
+      </div>
 
       <v-divider />
 

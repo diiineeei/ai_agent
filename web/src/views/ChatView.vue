@@ -9,7 +9,7 @@
         size="small"
         prepend-icon="mdi-identifier"
         class="cursor-pointer"
-        @click="sessionDialog = true"
+        @click="openSessionsDialog"
       >
         {{ store.sessionId }}
       </v-chip>
@@ -108,7 +108,7 @@
           class="px-4 py-2"
           max-width="75%"
         >
-          <p class="text-body-1 mb-0" style="white-space: pre-wrap">{{ msg.text }}</p>
+          <div class="markdown-body text-body-1" v-html="renderMarkdown(msg.text)" />
         </v-card>
       </div>
 
@@ -175,6 +175,101 @@
     </div>
   </div>
 
+  <!-- Sessions list dialog -->
+  <v-dialog v-model="sessionDialog" max-width="560" scrollable>
+    <v-card rounded="lg">
+      <v-card-title class="pt-4 d-flex align-center gap-2">
+        Sessões
+        <v-spacer />
+        <v-btn
+          size="small"
+          variant="tonal"
+          color="primary"
+          prepend-icon="mdi-plus"
+          @click="sessionDialog = false; newSessionDialog = true"
+        >
+          Nova sessão
+        </v-btn>
+      </v-card-title>
+
+      <v-divider />
+
+      <v-card-text class="pa-0" style="max-height: 420px">
+        <v-progress-linear v-if="loadingSessions" indeterminate />
+
+        <v-list v-if="sessions.length > 0" lines="two">
+          <v-list-item
+            v-for="s in sessions"
+            :key="s.session_id"
+            :active="s.session_id === store.sessionId"
+            color="primary"
+            rounded="lg"
+            class="mx-2 my-1"
+            @click="selectSession(s)"
+          >
+            <template #title>
+              <span class="text-body-2 font-weight-medium font-monospace">{{ s.session_id }}</span>
+            </template>
+            <template #subtitle>
+              <span>{{ getAgentName(s.agent_config_id) }}</span>
+              <span class="mx-1 text-disabled">·</span>
+              <span>{{ s.message_count }} msg</span>
+              <template v-if="s.updated_at">
+                <span class="mx-1 text-disabled">·</span>
+                <span>{{ formatDate(s.updated_at) }}</span>
+              </template>
+            </template>
+            <template #append>
+              <v-icon v-if="s.session_id === store.sessionId" size="16" color="primary">
+                mdi-check-circle
+              </v-icon>
+            </template>
+          </v-list-item>
+        </v-list>
+
+        <div
+          v-else-if="!loadingSessions"
+          class="text-center text-medium-emphasis py-8"
+        >
+          <v-icon size="40" style="opacity: 0.3">mdi-chat-outline</v-icon>
+          <p class="mt-2 text-body-2">Nenhuma sessão anterior.</p>
+        </div>
+      </v-card-text>
+
+      <v-divider />
+
+      <v-card-text class="pt-3 pb-3">
+        <v-row no-gutters align="center" class="gap-2">
+          <v-col>
+            <v-text-field
+              v-model="manualSessionId"
+              label="Ou digitar um ID de sessão"
+              variant="outlined"
+              density="compact"
+              hide-details
+              @keydown.enter="applyManualSession"
+            />
+          </v-col>
+          <v-col cols="auto">
+            <v-btn
+              color="primary"
+              variant="tonal"
+              :disabled="!manualSessionId.trim()"
+              @click="applyManualSession"
+            >
+              Ir
+            </v-btn>
+          </v-col>
+        </v-row>
+      </v-card-text>
+
+      <v-card-actions class="pt-0">
+        <v-spacer />
+        <v-btn @click="sessionDialog = false">Fechar</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
   <!-- New session dialog (agent selector) -->
   <v-dialog v-model="newSessionDialog" max-width="440">
     <v-card rounded="lg">
@@ -201,28 +296,6 @@
     </v-card>
   </v-dialog>
 
-  <!-- Change session dialog -->
-  <v-dialog v-model="sessionDialog" max-width="440">
-    <v-card rounded="lg">
-      <v-card-title class="pt-4">Sessão</v-card-title>
-      <v-card-text>
-        <v-text-field
-          v-model="sessionInput"
-          label="ID da sessão"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          @keydown.enter="applySession"
-        />
-      </v-card-text>
-      <v-card-actions>
-        <v-spacer />
-        <v-btn @click="sessionDialog = false">Cancelar</v-btn>
-        <v-btn color="primary" @click="applySession">Aplicar</v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
-
   <!-- Clear confirm dialog -->
   <v-dialog v-model="clearDialog" max-width="380">
     <v-card rounded="lg">
@@ -243,6 +316,8 @@
 import { ref, watch, nextTick, onMounted } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
+import { chatAPI } from '@/services/api'
+import { renderMarkdown } from '@/utils/markdown'
 
 const store = useChatStore()
 const agentConfigsStore = useAgentConfigsStore()
@@ -253,8 +328,10 @@ const loadingHistory = ref(false)
 const clearDialog = ref(false)
 const sessionDialog = ref(false)
 const newSessionDialog = ref(false)
-const sessionInput = ref(store.sessionId)
+const manualSessionId = ref('')
 const selectedConfigId = ref(null)
+const sessions = ref([])
+const loadingSessions = ref(false)
 
 onMounted(async () => {
   await agentConfigsStore.fetchAll()
@@ -290,8 +367,46 @@ async function doClear() {
   clearDialog.value = false
 }
 
-function applySession() {
-  store.setSession(sessionInput.value)
+async function openSessionsDialog() {
+  sessionDialog.value = true
+  manualSessionId.value = ''
+  loadingSessions.value = true
+  try {
+    const { data } = await chatAPI.listSessions()
+    sessions.value = data ?? []
+  } catch {
+    sessions.value = []
+  } finally {
+    loadingSessions.value = false
+  }
+}
+
+function getAgentName(agentConfigId) {
+  if (!agentConfigId) return '—'
+  const cfg = agentConfigsStore.configs.find((c) => c.id === agentConfigId)
+  return cfg?.name ?? agentConfigId
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime()) || d.getFullYear() < 2000) return ''
+  return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+function selectSession(s) {
+  store.setSession(s.session_id)
+  store.agentConfigId = s.agent_config_id || null
+  store.agentName = getAgentName(s.agent_config_id)
+  sessionDialog.value = false
+  loadHistory()
+}
+
+function applyManualSession() {
+  const id = manualSessionId.value.trim()
+  if (!id) return
+  store.setSession(id)
+  store.agentConfigId = null
+  store.agentName = null
   sessionDialog.value = false
 }
 
@@ -332,6 +447,90 @@ function scrollToBottom() {
 
 .chat-input {
   flex-shrink: 0;
+}
+
+.font-monospace {
+  font-family: monospace;
+}
+
+:deep(.markdown-body) {
+  line-height: 1.6;
+
+  > *:first-child { margin-top: 0; }
+  > *:last-child  { margin-bottom: 0; }
+
+  p { margin: 0.5em 0; }
+
+  h1, h2, h3, h4, h5, h6 {
+    margin: 0.8em 0 0.4em;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  h1 { font-size: 1.4em; }
+  h2 { font-size: 1.2em; }
+  h3 { font-size: 1.05em; }
+
+  ul, ol {
+    margin: 0.4em 0;
+    padding-left: 1.5em;
+  }
+  li { margin: 0.2em 0; }
+
+  code {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.875em;
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    background: rgba(128, 128, 128, 0.15);
+  }
+
+  pre {
+    margin: 0.6em 0;
+    padding: 0.75em 1em;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.06);
+    overflow-x: auto;
+
+    code {
+      padding: 0;
+      background: none;
+      font-size: 0.85em;
+    }
+  }
+
+  blockquote {
+    margin: 0.5em 0;
+    padding: 0.3em 0.8em;
+    border-left: 3px solid currentColor;
+    opacity: 0.75;
+  }
+
+  table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    width: 100%;
+    font-size: 0.9em;
+
+    th, td {
+      border: 1px solid rgba(128, 128, 128, 0.3);
+      padding: 0.35em 0.6em;
+      text-align: left;
+    }
+    th { font-weight: 600; background: rgba(128, 128, 128, 0.1); }
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid rgba(128, 128, 128, 0.3);
+    margin: 0.8em 0;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: underline;
+    opacity: 0.85;
+    &:hover { opacity: 1; }
+  }
 }
 
 .typing-indicator {
