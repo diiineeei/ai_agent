@@ -47,6 +47,7 @@ func main() {
 	fileRepo := repository.NewMongoFileRepository(db.Collection("files"))
 	skillRepo := repository.NewMongoSkillRepository(db.Collection("skills"))
 	agentConfigRepo := repository.NewMongoAgentConfigRepository(db.Collection("agent_configs"))
+	feedbackRepo := repository.NewMongoFeedbackRepository(db.Collection("feedback"))
 
 	// Embedder
 	embedder := agent.NewEmbedder()
@@ -96,6 +97,7 @@ func main() {
 	fileHandler := handler.NewFileHandler(fileRepo, embedder)
 	skillHandler := handler.NewSkillHandler(skillRepo)
 	agentConfigHandler := handler.NewAgentConfigHandler(agentConfigRepo, geminiClient)
+	feedbackHandler := handler.NewFeedbackHandler(feedbackRepo)
 
 	// Routes (Go 1.22+ ServeMux with method+pattern)
 	mux := http.NewServeMux()
@@ -109,6 +111,9 @@ func main() {
 	mux.HandleFunc("DELETE /files/{id}", fileHandler.Delete)
 	mux.HandleFunc("GET /skills", skillHandler.List)
 	mux.HandleFunc("PUT /skills/{name}/toggle", skillHandler.Toggle)
+	mux.HandleFunc("POST /feedback", feedbackHandler.Submit)
+	mux.HandleFunc("GET /feedback", feedbackHandler.ForSession)
+	mux.HandleFunc("GET /feedback/stats", feedbackHandler.Stats)
 	mux.HandleFunc("GET /agent-configs", agentConfigHandler.List)
 	mux.HandleFunc("POST /agent-configs", agentConfigHandler.Create)
 	mux.HandleFunc("POST /agent-configs/improve-instruction", agentConfigHandler.ImproveInstruction)

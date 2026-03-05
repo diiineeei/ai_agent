@@ -87,6 +87,7 @@ const navItems = [
   { title: 'Arquivos', icon: 'mdi-file-multiple', to: '/files' },
   { title: 'Skills', icon: 'mdi-puzzle', to: '/skills' },
   { title: 'Agentes', icon: 'mdi-robot-happy', to: '/agents' },
+  { title: 'Métricas', icon: 'mdi-chart-bar', to: '/metrics' },
 ]
 
 function toggleTheme() {

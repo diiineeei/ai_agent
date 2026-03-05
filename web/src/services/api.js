@@ -32,6 +32,13 @@ export const skillsAPI = {
   toggle: (name) => http.put(`/skills/${name}/toggle`),
 }
 
+export const feedbackAPI = {
+  submit: (sessionId, messageIndex, agentConfigId, rating) =>
+    http.post('/feedback', { session_id: sessionId, message_index: messageIndex, agent_config_id: agentConfigId, rating }),
+  forSession: (sessionId) => http.get('/feedback', { params: { session_id: sessionId } }),
+  stats: () => http.get('/feedback/stats'),
+}
+
 export const agentConfigsAPI = {
   list: () => http.get('/agent-configs'),
   getById: (id) => http.get(`/agent-configs/${id}`),

@@ -3,6 +3,7 @@ import ChatView from '@/views/ChatView.vue'
 import FilesView from '@/views/FilesView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import AgentsView from '@/views/AgentsView.vue'
+import MetricsView from '@/views/MetricsView.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -11,5 +12,6 @@ export default createRouter({
     { path: '/files', name: 'files', component: FilesView },
     { path: '/skills', name: 'skills', component: SkillsView },
     { path: '/agents', name: 'agents', component: AgentsView },
+    { path: '/metrics', name: 'metrics', component: MetricsView },
   ],
 })

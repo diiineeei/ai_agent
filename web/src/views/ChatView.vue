@@ -87,13 +87,30 @@
           </v-sheet>
 
           <!-- Model -->
-          <v-sheet
-            v-else
-            rounded="xl"
-            class="border px-4 py-3 bubble-model"
-          >
-            <div class="markdown-body text-body-1" v-html="renderMarkdown(msg.text)" />
-          </v-sheet>
+          <div v-else class="d-flex flex-column bubble-model">
+            <v-sheet rounded="xl" class="border px-4 py-3">
+              <div class="markdown-body text-body-1" v-html="renderMarkdown(msg.text)" />
+            </v-sheet>
+            <!-- Rating buttons -->
+            <div class="d-flex gap-1 mt-1 pl-1">
+              <v-btn
+                icon size="x-small" variant="text"
+                :color="ratings[modelSeqOf(i)] === 'up' ? 'success' : undefined"
+                :style="ratings[modelSeqOf(i)] && ratings[modelSeqOf(i)] !== 'up' ? 'opacity:.3' : ''"
+                @click="rateMessage(i, 'up')"
+              >
+                <v-icon size="15">{{ ratings[modelSeqOf(i)] === 'up' ? 'mdi-thumb-up' : 'mdi-thumb-up-outline' }}</v-icon>
+              </v-btn>
+              <v-btn
+                icon size="x-small" variant="text"
+                :color="ratings[modelSeqOf(i)] === 'down' ? 'error' : undefined"
+                :style="ratings[modelSeqOf(i)] && ratings[modelSeqOf(i)] !== 'down' ? 'opacity:.3' : ''"
+                @click="rateMessage(i, 'down')"
+              >
+                <v-icon size="15">{{ ratings[modelSeqOf(i)] === 'down' ? 'mdi-thumb-down' : 'mdi-thumb-down-outline' }}</v-icon>
+              </v-btn>
+            </div>
+          </div>
         </div>
 
       </template>
@@ -332,7 +349,7 @@
 import { ref, watch, nextTick, onMounted } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
-import { chatAPI, filesAPI } from '@/services/api'
+import { chatAPI, filesAPI, feedbackAPI } from '@/services/api'
 import { renderMarkdown } from '@/utils/markdown'
 
 const store = useChatStore()
@@ -345,6 +362,9 @@ const fileInput    = ref(null)
 const loadingHistory = ref(false)
 const uploading    = ref(false)
 const uploadStatus = ref(null)
+
+// ratings: { [messageIndex]: 'up' | 'down' }
+const ratings = ref({})
 
 const clearDialog      = ref(false)
 const sessionDialog    = ref(false)
@@ -370,6 +390,7 @@ onMounted(async () => {
 })
 
 watch(() => store.messages.length, scrollToBottom)
+watch(() => store.sessionId, () => { ratings.value = {} })
 
 // ── Messaging ──────────────────────────────────────────
 async function sendMessage() {
@@ -382,6 +403,7 @@ async function sendMessage() {
 async function loadHistory() {
   loadingHistory.value = true
   await store.loadHistory()
+  await loadRatings()
   scrollToBottom()
   loadingHistory.value = false
 }
@@ -442,7 +464,7 @@ function selectSession(s) {
   store.agentConfigId = s.agent_config_id || null
   store.agentName     = getAgentName(s.agent_config_id)
   sessionDialog.value = false
-  loadHistory()
+  loadHistory() // loadHistory já chama loadRatings internamente
 }
 
 function applyManualSession() {
@@ -477,6 +499,33 @@ async function submitRename(s) {
     if (s.session_id === store.sessionId) store.sessionName = name || null
   } catch { /* ignore */ }
   renamingId.value = null
+}
+
+// ── Feedback ───────────────────────────────────────────
+// Use the sequential index among model-only messages as a stable key
+// (immune to interleaved system messages from file uploads).
+function modelSeqOf(flatIdx) {
+  let n = -1
+  for (let j = 0; j <= flatIdx; j++) {
+    if (store.messages[j]?.role === 'model') n++
+  }
+  return n
+}
+
+async function rateMessage(flatIdx, rating) {
+  const seq = modelSeqOf(flatIdx)
+  if (ratings.value[seq] === rating) return
+  ratings.value[seq] = rating
+  feedbackAPI.submit(store.sessionId, seq, store.agentConfigId ?? '', rating).catch(() => {})
+}
+
+async function loadRatings() {
+  try {
+    const { data } = await feedbackAPI.forSession(store.sessionId)
+    const map = {}
+    for (const f of (data ?? [])) map[f.message_index] = f.rating
+    ratings.value = map
+  } catch { /* non-critical */ }
 }
 
 function scrollToBottom() {
