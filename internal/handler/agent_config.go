@@ -2,18 +2,23 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"ai_agent/internal/model"
 	"ai_agent/internal/repository"
+
+	"google.golang.org/genai"
 )
 
 type AgentConfigHandler struct {
-	repo repository.AgentConfigRepository
+	repo         repository.AgentConfigRepository
+	geminiClient *genai.Client
 }
 
-func NewAgentConfigHandler(repo repository.AgentConfigRepository) *AgentConfigHandler {
-	return &AgentConfigHandler{repo: repo}
+func NewAgentConfigHandler(repo repository.AgentConfigRepository, geminiClient *genai.Client) *AgentConfigHandler {
+	return &AgentConfigHandler{repo: repo, geminiClient: geminiClient}
 }
 
 // List handles GET /agent-configs
@@ -88,4 +93,44 @@ func (h *AgentConfigHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, http.StatusOK, map[string]string{"message": "agente removido com sucesso"})
+}
+
+// ImproveInstruction handles POST /agent-configs/improve-instruction
+// Uses the specified model to rewrite a system instruction via a single prompt call.
+func (h *AgentConfigHandler) ImproveInstruction(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Model       string `json:"model"`
+		Instruction string `json:"instruction"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		jsonError(w, "body inválido: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(body.Instruction) == "" {
+		jsonError(w, "campo 'instruction' é obrigatório", http.StatusBadRequest)
+		return
+	}
+	if body.Model == "" {
+		jsonError(w, "campo 'model' é obrigatório", http.StatusBadRequest)
+		return
+	}
+
+	prompt := fmt.Sprintf(`Você é um especialista em engenharia de prompts para agentes de IA.
+Melhore a instrução de sistema abaixo, tornando-a mais clara, específica e eficaz.
+Retorne APENAS a instrução melhorada, sem nenhuma explicação adicional.
+
+Instrução:
+%s`, strings.TrimSpace(body.Instruction))
+
+	contents := []*genai.Content{
+		{Role: "user", Parts: []*genai.Part{{Text: prompt}}},
+	}
+
+	resp, err := h.geminiClient.Models.GenerateContent(r.Context(), body.Model, contents, nil)
+	if err != nil {
+		jsonError(w, "erro ao chamar o modelo: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]string{"instruction": strings.TrimSpace(resp.Text())})
 }

@@ -101,9 +101,22 @@
           density="comfortable"
           auto-grow
           rows="3"
-          class="mb-3"
+          class="mb-1"
           hide-details
         />
+        <div class="d-flex justify-end mb-3">
+          <v-btn
+            size="small"
+            variant="tonal"
+            color="secondary"
+            prepend-icon="mdi-auto-fix"
+            :loading="improving"
+            :disabled="!form.model || !form.system_instruction.trim()"
+            @click="improveInstruction"
+          >
+            Melhorar com IA
+          </v-btn>
+        </div>
         <div class="text-body-2 mb-2">Skills habilitadas</div>
         <v-checkbox
           v-for="skill in skillsStore.skills"
@@ -143,6 +156,7 @@
 import { ref, onMounted } from 'vue'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
 import { useSkillsStore } from '@/stores/skills'
+import { agentConfigsAPI } from '@/services/api'
 
 const store = useAgentConfigsStore()
 const skillsStore = useSkillsStore()
@@ -153,6 +167,7 @@ const formDialog = ref(false)
 const deleteDialog = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
+const improving = ref(false)
 const editTarget = ref(null)
 const deleteTarget = ref(null)
 
@@ -188,6 +203,19 @@ function openEdit(cfg) {
 
 function closeForm() {
   formDialog.value = false
+}
+
+async function improveInstruction() {
+  improving.value = true
+  try {
+    const { data } = await agentConfigsAPI.improveInstruction(
+      form.value.model,
+      form.value.system_instruction,
+    )
+    form.value.system_instruction = data.instruction
+  } finally {
+    improving.value = false
+  }
 }
 
 async function submitForm() {

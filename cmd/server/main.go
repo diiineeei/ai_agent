@@ -95,7 +95,7 @@ func main() {
 	chatHandler := handler.NewChatHandler(geminiClient, sessionRepo, agentConfigRepo, registry)
 	fileHandler := handler.NewFileHandler(fileRepo, embedder)
 	skillHandler := handler.NewSkillHandler(skillRepo)
-	agentConfigHandler := handler.NewAgentConfigHandler(agentConfigRepo)
+	agentConfigHandler := handler.NewAgentConfigHandler(agentConfigRepo, geminiClient)
 
 	// Routes (Go 1.22+ ServeMux with method+pattern)
 	mux := http.NewServeMux()
@@ -110,6 +110,7 @@ func main() {
 	mux.HandleFunc("PUT /skills/{name}/toggle", skillHandler.Toggle)
 	mux.HandleFunc("GET /agent-configs", agentConfigHandler.List)
 	mux.HandleFunc("POST /agent-configs", agentConfigHandler.Create)
+	mux.HandleFunc("POST /agent-configs/improve-instruction", agentConfigHandler.ImproveInstruction)
 	mux.HandleFunc("GET /agent-configs/{id}", agentConfigHandler.GetByID)
 	mux.HandleFunc("PUT /agent-configs/{id}", agentConfigHandler.Update)
 	mux.HandleFunc("DELETE /agent-configs/{id}", agentConfigHandler.Delete)

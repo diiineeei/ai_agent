@@ -36,4 +36,6 @@ export const agentConfigsAPI = {
   create: (data) => http.post('/agent-configs', data),
   update: (id, data) => http.put(`/agent-configs/${id}`, data),
   delete: (id) => http.delete(`/agent-configs/${id}`),
+  improveInstruction: (model, instruction) =>
+    http.post('/agent-configs/improve-instruction', { model, instruction }),
 }
