@@ -28,14 +28,38 @@
         <v-icon>mdi-plus-circle-outline</v-icon>
         <v-tooltip activator="parent" location="bottom">Nova sessão</v-tooltip>
       </v-btn>
-      <v-btn
-        icon size="small" variant="text"
-        :color="ttsEnabled ? 'primary' : undefined"
-        @click="toggleTts"
-      >
-        <v-icon size="18">{{ ttsEnabled ? 'mdi-volume-high' : 'mdi-volume-off' }}</v-icon>
-        <v-tooltip activator="parent" location="bottom">{{ ttsEnabled ? 'Desativar leitura em voz alta' : 'Ativar leitura em voz alta' }}</v-tooltip>
-      </v-btn>
+      <v-menu location="bottom end" :close-on-content-click="false">
+        <template #activator="{ props: menuProps }">
+          <v-btn icon size="small" variant="text" :color="ttsEnabled ? 'primary' : undefined" v-bind="menuProps">
+            <v-icon size="18">{{ ttsEnabled ? 'mdi-volume-high' : 'mdi-volume-off' }}</v-icon>
+            <v-tooltip activator="parent" location="bottom">Voz</v-tooltip>
+          </v-btn>
+        </template>
+        <v-card min-width="260" rounded="lg">
+          <v-list density="compact" nav>
+            <v-list-item :title="ttsEnabled ? 'Desativar voz' : 'Ativar voz'" @click="toggleTts">
+              <template #append>
+                <v-switch :model-value="ttsEnabled" color="primary" hide-details density="compact" @click.stop="toggleTts" />
+              </template>
+            </v-list-item>
+          </v-list>
+          <v-divider />
+          <v-list density="compact" nav max-height="280" class="overflow-y-auto">
+            <v-list-subheader>Voz</v-list-subheader>
+            <v-list-item
+              v-for="v in ttsVoices"
+              :key="v.name"
+              :title="v.name"
+              :subtitle="v.lang"
+              :active="selectedVoice?.name === v.name"
+              active-color="primary"
+              rounded="lg"
+              @click="selectedVoice = v"
+            />
+            <v-list-item v-if="ttsVoices.length === 0" title="Nenhuma voz disponível" disabled />
+          </v-list>
+        </v-card>
+      </v-menu>
       <v-btn
         icon size="small" variant="text"
         :color="showTokens ? 'primary' : undefined"
@@ -428,10 +452,27 @@ const ratings    = ref({})
 const showTokens = ref(false)
 
 // ── Voice ──────────────────────────────────────────────
-const listening      = ref(false)
-const micAutoSend    = ref(false)
-const ttsEnabled     = ref(false)
+const listening       = ref(false)
+const micAutoSend     = ref(false)
+const ttsEnabled      = ref(false)
+const ttsVoices       = ref([])
+const selectedVoice   = ref(null)
 const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+
+function loadVoices() {
+  const all = window.speechSynthesis.getVoices()
+  if (!all.length) return
+  // pt-BR primeiro, depois o resto ordenado por língua
+  ttsVoices.value = [
+    ...all.filter(v => v.lang.startsWith('pt')),
+    ...all.filter(v => !v.lang.startsWith('pt')),
+  ]
+  if (!selectedVoice.value) {
+    selectedVoice.value = ttsVoices.value.find(v => v.lang === 'pt-BR') ?? ttsVoices.value[0] ?? null
+  }
+}
+loadVoices()
+window.speechSynthesis.addEventListener('voiceschanged', loadVoices)
 
 let recognition = null
 if (speechSupported) {
@@ -671,7 +712,8 @@ function speak(text) {
   if (!ttsEnabled.value || !text) return
   window.speechSynthesis.cancel()
   const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = 'pt-BR'
+  if (selectedVoice.value) utterance.voice = selectedVoice.value
+  utterance.lang = selectedVoice.value?.lang ?? 'pt-BR'
   utterance.rate = 1.05
   window.speechSynthesis.speak(utterance)
 }

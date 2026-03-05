@@ -55,6 +55,19 @@ func (h *SuggestHandler) Suggest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Só gera sugestões se a skill estiver habilitada no agente
+	skillEnabled := false
+	for _, s := range cfg.EnabledSkills {
+		if s == "suggest_questions" {
+			skillEnabled = true
+			break
+		}
+	}
+	if !skillEnabled {
+		jsonResponse(w, http.StatusOK, map[string]any{"questions": []string{}})
+		return
+	}
+
 	questions, err := skills.GenerateSuggestions(ctx, h.geminiClient, h.sessionRepo, *cfg, sessionID, "")
 	if err != nil {
 		jsonError(w, "erro ao gerar sugestões: "+err.Error(), http.StatusInternalServerError)
