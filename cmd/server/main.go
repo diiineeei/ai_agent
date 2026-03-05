@@ -24,9 +24,6 @@ func main() {
 	mongoURI := getEnv("MONGODB_URI", "mongodb://localhost:27017")
 	mongoDBName := getEnv("MONGODB_DB", "ai_agent")
 
-	// System instruction
-	systemInstruction := loadSystemInstruction("assets/system_instruction.txt")
-
 	ctx := context.Background()
 
 	// Connect MongoDB
@@ -82,13 +79,14 @@ func main() {
 		log.Fatalf("lendo system instruction: %v", err)
 	}
 	if existing == "" {
-		if err := settingsRepo.SetSystemInstruction(ctx, systemInstruction); err != nil {
+		seed := "Você é um assistente útil. Responda sempre em português."
+		if err := settingsRepo.SetSystemInstruction(ctx, seed); err != nil {
 			log.Fatalf("seed de system instruction: %v", err)
 		}
 	}
 
 	// Handlers
-	chatHandler := handler.NewChatHandler(geminiClient, model, systemInstruction, sessionRepo, registry, settingsRepo)
+	chatHandler := handler.NewChatHandler(geminiClient, model, "", sessionRepo, registry, settingsRepo)
 	fileHandler := handler.NewFileHandler(fileRepo, embedder)
 	skillHandler := handler.NewSkillHandler(skillRepo)
 	settingsHandler := handler.NewSettingsHandler(settingsRepo)
@@ -125,13 +123,4 @@ func getEnv(key, defaultValue string) string {
 		return v
 	}
 	return defaultValue
-}
-
-func loadSystemInstruction(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		log.Printf("aviso: não foi possível ler %q, usando instrução padrão: %v", path, err)
-		return "Você é um assistente útil. Responda sempre em português."
-	}
-	return string(data)
 }
