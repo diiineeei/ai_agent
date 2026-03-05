@@ -73,3 +73,34 @@ func (r *SkillRegistry) LoadEnabled(ctx context.Context, a *agent.Agent) error {
 	}
 	return nil
 }
+
+// LoadByNames loads only globally-enabled skills whose names are in the provided list.
+// It acts as the intersection of globally enabled skills and the agent's configured skills.
+func (r *SkillRegistry) LoadByNames(ctx context.Context, a *agent.Agent, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	allowed := make(map[string]bool, len(names))
+	for _, n := range names {
+		allowed[n] = true
+	}
+	enabled, err := r.skillRepo.ListEnabled(ctx)
+	if err != nil {
+		return fmt.Errorf("loading enabled skills: %w", err)
+	}
+	for _, doc := range enabled {
+		if !allowed[doc.Name] {
+			continue
+		}
+		meta, ok := r.entries[doc.Name]
+		if !ok {
+			log.Printf("WARNING: skill %q is enabled in DB but has no registered factory", doc.Name)
+			continue
+		}
+		skill := meta.fn()
+		if err := a.AddFunctionCall(skill.Declaration()); err != nil {
+			return fmt.Errorf("registering skill %q with agent: %w", doc.Name, err)
+		}
+	}
+	return nil
+}

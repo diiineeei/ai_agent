@@ -15,11 +15,14 @@ type SessionRepository interface {
 	Save(ctx context.Context, sessionID string, history []model.Content) error
 	Load(ctx context.Context, sessionID string) ([]model.Content, error)
 	Delete(ctx context.Context, sessionID string) error
+	GetAgentConfigID(ctx context.Context, sessionID string) (string, error)
+	SetAgentConfigID(ctx context.Context, sessionID, agentConfigID string) error
 }
 
 type sessionDoc struct {
-	ID      string          `bson:"_id"`
-	History []model.Content `bson:"history"`
+	ID            string          `bson:"_id"`
+	History       []model.Content `bson:"history"`
+	AgentConfigID string          `bson:"agent_config_id,omitempty"`
 }
 
 type MongoSessionRepository struct {
@@ -56,6 +59,28 @@ func (r *MongoSessionRepository) Delete(ctx context.Context, sessionID string) e
 	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": sessionID})
 	if err != nil {
 		return fmt.Errorf("deleting session %q: %w", sessionID, err)
+	}
+	return nil
+}
+
+func (r *MongoSessionRepository) GetAgentConfigID(ctx context.Context, sessionID string) (string, error) {
+	var doc sessionDoc
+	err := r.coll.FindOne(ctx, bson.M{"_id": sessionID}).Decode(&doc)
+	if err == mongo.ErrNoDocuments {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("getting agent config id for session %q: %w", sessionID, err)
+	}
+	return doc.AgentConfigID, nil
+}
+
+func (r *MongoSessionRepository) SetAgentConfigID(ctx context.Context, sessionID, agentConfigID string) error {
+	filter := bson.M{"_id": sessionID}
+	update := bson.M{"$set": bson.M{"agent_config_id": agentConfigID}}
+	_, err := r.coll.UpdateOne(ctx, filter, update, options.UpdateOne().SetUpsert(true))
+	if err != nil {
+		return fmt.Errorf("setting agent config id for session %q: %w", sessionID, err)
 	}
 	return nil
 }

@@ -3,8 +3,11 @@ import axios from 'axios'
 const http = axios.create({ baseURL: '/api' })
 
 export const chatAPI = {
-  sendPrompt: (sessionId, prompt) =>
-    http.post('/prompt', { session_id: sessionId, prompt }),
+  sendPrompt: (sessionId, prompt, agentConfigId = null) => {
+    const body = { session_id: sessionId, prompt }
+    if (agentConfigId) body.agent_config_id = agentConfigId
+    return http.post('/prompt', body)
+  },
   getHistory: (sessionId) =>
     http.get('/history', { params: { session_id: sessionId } }),
   deleteHistory: (sessionId) =>
@@ -26,7 +29,10 @@ export const skillsAPI = {
   toggle: (name) => http.put(`/skills/${name}/toggle`),
 }
 
-export const settingsAPI = {
-  get: () => http.get('/settings/system-instruction'),
-  set: (value) => http.put('/settings/system-instruction', { value }),
+export const agentConfigsAPI = {
+  list: () => http.get('/agent-configs'),
+  getById: (id) => http.get(`/agent-configs/${id}`),
+  create: (data) => http.post('/agent-configs', data),
+  update: (id, data) => http.put(`/agent-configs/${id}`, data),
+  delete: (id) => http.delete(`/agent-configs/${id}`),
 }

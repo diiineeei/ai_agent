@@ -14,6 +14,17 @@
         {{ store.sessionId }}
       </v-chip>
 
+      <v-chip
+        v-if="store.agentName"
+        color="secondary"
+        variant="tonal"
+        label
+        size="small"
+        prepend-icon="mdi-robot-happy"
+      >
+        {{ store.agentName }}
+      </v-chip>
+
       <v-btn
         size="small"
         variant="text"
@@ -28,7 +39,7 @@
         size="small"
         variant="text"
         prepend-icon="mdi-plus-circle-outline"
-        @click="store.newSession()"
+        @click="newSessionDialog = true"
       >
         Nova sessão
       </v-btn>
@@ -164,6 +175,32 @@
     </div>
   </div>
 
+  <!-- New session dialog (agent selector) -->
+  <v-dialog v-model="newSessionDialog" max-width="440">
+    <v-card rounded="lg">
+      <v-card-title class="pt-4">Nova sessão</v-card-title>
+      <v-card-text>
+        <v-select
+          v-model="selectedConfigId"
+          :items="agentConfigsStore.configs"
+          item-title="name"
+          item-value="id"
+          label="Selecione o agente"
+          variant="outlined"
+          density="comfortable"
+          hide-details
+        />
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn @click="newSessionDialog = false">Cancelar</v-btn>
+        <v-btn color="primary" :disabled="!selectedConfigId" @click="startNewSession">
+          Iniciar
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
   <!-- Change session dialog -->
   <v-dialog v-model="sessionDialog" max-width="440">
     <v-card rounded="lg">
@@ -205,17 +242,29 @@
 <script setup>
 import { ref, watch, nextTick, onMounted } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import { useAgentConfigsStore } from '@/stores/agent_configs'
 
 const store = useChatStore()
+const agentConfigsStore = useAgentConfigsStore()
 
 const input = ref('')
 const messagesEl = ref(null)
 const loadingHistory = ref(false)
 const clearDialog = ref(false)
 const sessionDialog = ref(false)
+const newSessionDialog = ref(false)
 const sessionInput = ref(store.sessionId)
+const selectedConfigId = ref(null)
 
-onMounted(scrollToBottom)
+onMounted(async () => {
+  await agentConfigsStore.fetchAll()
+  if (!store.agentConfigId && agentConfigsStore.configs.length > 0) {
+    store.agentConfigId = agentConfigsStore.configs[0].id
+    store.agentName = agentConfigsStore.configs[0].name
+  }
+  selectedConfigId.value = store.agentConfigId
+  scrollToBottom()
+})
 
 watch(
   () => store.messages.length,
@@ -244,6 +293,13 @@ async function doClear() {
 function applySession() {
   store.setSession(sessionInput.value)
   sessionDialog.value = false
+}
+
+function startNewSession() {
+  const cfg = agentConfigsStore.configs.find((c) => c.id === selectedConfigId.value)
+  store.newSession(selectedConfigId.value)
+  if (cfg) store.agentName = cfg.name
+  newSessionDialog.value = false
 }
 
 function scrollToBottom() {

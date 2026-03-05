@@ -9,6 +9,8 @@ function genSessionId() {
 export const useChatStore = defineStore('chat', () => {
   const messages = ref([])
   const sessionId = ref(genSessionId())
+  const agentConfigId = ref(null)
+  const agentName = ref(null)
   const loading = ref(false)
   const error = ref(null)
 
@@ -17,8 +19,9 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push({ role: 'user', text: prompt })
     loading.value = true
     try {
-      const { data } = await chatAPI.sendPrompt(sessionId.value, prompt)
+      const { data } = await chatAPI.sendPrompt(sessionId.value, prompt, agentConfigId.value)
       messages.value.push({ role: 'model', text: data.response })
+      if (data.agent_name) agentName.value = data.agent_name
     } catch (e) {
       messages.value.pop()
       error.value = e.response?.data?.error || e.message
@@ -52,10 +55,12 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
   }
 
-  function newSession() {
+  function newSession(configId) {
     sessionId.value = genSessionId()
     messages.value = []
     error.value = null
+    agentConfigId.value = configId ?? null
+    agentName.value = null
   }
 
   function setSession(id) {
@@ -65,5 +70,17 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
   }
 
-  return { messages, sessionId, loading, error, send, loadHistory, clearHistory, newSession, setSession }
+  return {
+    messages,
+    sessionId,
+    agentConfigId,
+    agentName,
+    loading,
+    error,
+    send,
+    loadHistory,
+    clearHistory,
+    newSession,
+    setSession,
+  }
 })

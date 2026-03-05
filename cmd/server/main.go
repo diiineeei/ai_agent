@@ -9,6 +9,7 @@ import (
 
 	"ai_agent/internal/agent"
 	"ai_agent/internal/handler"
+	"ai_agent/internal/model"
 	"ai_agent/internal/repository"
 	"ai_agent/internal/skills"
 
@@ -19,7 +20,7 @@ import (
 
 func main() {
 	apiKey := mustEnv("GEMINI_API_KEY")
-	model := getEnv("MODEL", "gemini-2.5-flash")
+	defaultModel := getEnv("MODEL", "gemini-2.5-flash")
 	port := getEnv("HTTP_PORT", "8080")
 	mongoURI := getEnv("MONGODB_URI", "mongodb://localhost:27017")
 	mongoDBName := getEnv("MONGODB_DB", "ai_agent")
@@ -45,7 +46,7 @@ func main() {
 	sessionRepo := repository.NewMongoSessionRepository(db.Collection("sessions"))
 	fileRepo := repository.NewMongoFileRepository(db.Collection("files"))
 	skillRepo := repository.NewMongoSkillRepository(db.Collection("skills"))
-	settingsRepo := repository.NewMongoSettingsRepository(db.Collection("settings"))
+	agentConfigRepo := repository.NewMongoAgentConfigRepository(db.Collection("agent_configs"))
 
 	// Embedder
 	embedder := agent.NewEmbedder()
@@ -73,23 +74,28 @@ func main() {
 		log.Fatalf("seed de skills: %v", err)
 	}
 
-	// Seed system instruction if not yet persisted
-	existing, err := settingsRepo.GetSystemInstruction(ctx)
+	// Seed default agent config if none exists
+	count, err := agentConfigRepo.CountAll(ctx)
 	if err != nil {
-		log.Fatalf("lendo system instruction: %v", err)
+		log.Fatalf("contando agent configs: %v", err)
 	}
-	if existing == "" {
-		seed := "Você é um assistente útil. Responda sempre em português."
-		if err := settingsRepo.SetSystemInstruction(ctx, seed); err != nil {
-			log.Fatalf("seed de system instruction: %v", err)
+	if count == 0 {
+		_, err := agentConfigRepo.Create(ctx, model.AgentConfig{
+			Name:              "Padrão",
+			SystemInstruction: "Você é um assistente útil. Responda sempre em português.",
+			Model:             defaultModel,
+			EnabledSkills:     []string{"weather", "search_documents"},
+		})
+		if err != nil {
+			log.Fatalf("seed de agent config: %v", err)
 		}
 	}
 
 	// Handlers
-	chatHandler := handler.NewChatHandler(geminiClient, model, "", sessionRepo, registry, settingsRepo)
+	chatHandler := handler.NewChatHandler(geminiClient, sessionRepo, agentConfigRepo, registry)
 	fileHandler := handler.NewFileHandler(fileRepo, embedder)
 	skillHandler := handler.NewSkillHandler(skillRepo)
-	settingsHandler := handler.NewSettingsHandler(settingsRepo)
+	agentConfigHandler := handler.NewAgentConfigHandler(agentConfigRepo)
 
 	// Routes (Go 1.22+ ServeMux with method+pattern)
 	mux := http.NewServeMux()
@@ -101,8 +107,11 @@ func main() {
 	mux.HandleFunc("DELETE /files/{id}", fileHandler.Delete)
 	mux.HandleFunc("GET /skills", skillHandler.List)
 	mux.HandleFunc("PUT /skills/{name}/toggle", skillHandler.Toggle)
-	mux.HandleFunc("GET /settings/system-instruction", settingsHandler.GetSystemInstruction)
-	mux.HandleFunc("PUT /settings/system-instruction", settingsHandler.SetSystemInstruction)
+	mux.HandleFunc("GET /agent-configs", agentConfigHandler.List)
+	mux.HandleFunc("POST /agent-configs", agentConfigHandler.Create)
+	mux.HandleFunc("GET /agent-configs/{id}", agentConfigHandler.GetByID)
+	mux.HandleFunc("PUT /agent-configs/{id}", agentConfigHandler.Update)
+	mux.HandleFunc("DELETE /agent-configs/{id}", agentConfigHandler.Delete)
 
 	log.Printf("servidor iniciado em :%s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {

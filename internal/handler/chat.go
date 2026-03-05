@@ -12,34 +12,30 @@ import (
 )
 
 type ChatHandler struct {
-	geminiClient       *genai.Client
-	model              string
-	defaultInstruction string
-	sessionRepo        repository.SessionRepository
-	registry           *skills.SkillRegistry
-	settingsRepo       repository.SettingsRepository
+	geminiClient    *genai.Client
+	sessionRepo     repository.SessionRepository
+	agentConfigRepo repository.AgentConfigRepository
+	registry        *skills.SkillRegistry
 }
 
 func NewChatHandler(
 	geminiClient *genai.Client,
-	model, defaultInstruction string,
 	sessionRepo repository.SessionRepository,
+	agentConfigRepo repository.AgentConfigRepository,
 	registry *skills.SkillRegistry,
-	settingsRepo repository.SettingsRepository,
 ) *ChatHandler {
 	return &ChatHandler{
-		geminiClient:       geminiClient,
-		model:              model,
-		defaultInstruction: defaultInstruction,
-		sessionRepo:        sessionRepo,
-		registry:           registry,
-		settingsRepo:       settingsRepo,
+		geminiClient:    geminiClient,
+		sessionRepo:     sessionRepo,
+		agentConfigRepo: agentConfigRepo,
+		registry:        registry,
 	}
 }
 
 type promptRequest struct {
-	SessionID string `json:"session_id"`
-	Prompt    string `json:"prompt"`
+	SessionID     string `json:"session_id"`
+	Prompt        string `json:"prompt"`
+	AgentConfigID string `json:"agent_config_id,omitempty"`
 }
 
 // SendPrompt handles POST /prompt — sends a user message to the agent.
@@ -55,19 +51,40 @@ func (h *ChatHandler) SendPrompt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	instruction, err := h.settingsRepo.GetSystemInstruction(r.Context())
-	if err != nil || instruction == "" {
-		instruction = h.defaultInstruction
+	ctx := r.Context()
+
+	storedID, err := h.sessionRepo.GetAgentConfigID(ctx, req.SessionID)
+	if err != nil {
+		jsonError(w, "erro ao verificar sessão: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	a := agent.NewWithRepo(h.geminiClient, h.model, instruction, h.sessionRepo)
+	if storedID == "" {
+		if req.AgentConfigID == "" {
+			jsonError(w, "campo 'agent_config_id' é obrigatório para novas sessões", http.StatusBadRequest)
+			return
+		}
+		if err := h.sessionRepo.SetAgentConfigID(ctx, req.SessionID, req.AgentConfigID); err != nil {
+			jsonError(w, "erro ao vincular agente à sessão: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		storedID = req.AgentConfigID
+	}
 
-	if err := h.registry.LoadEnabled(r.Context(), a); err != nil {
+	cfg, err := h.agentConfigRepo.GetByID(ctx, storedID)
+	if err != nil || cfg == nil {
+		jsonError(w, "agente não encontrado: "+storedID, http.StatusBadRequest)
+		return
+	}
+
+	a := agent.NewWithRepo(h.geminiClient, cfg.Model, cfg.SystemInstruction, h.sessionRepo)
+
+	if err := h.registry.LoadByNames(ctx, a, cfg.EnabledSkills); err != nil {
 		jsonError(w, "erro ao carregar skills: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	response, err := a.Send(r.Context(), req.SessionID, req.Prompt)
+	response, err := a.Send(ctx, req.SessionID, req.Prompt)
 	if err != nil {
 		jsonError(w, "erro ao processar prompt: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -76,6 +93,7 @@ func (h *ChatHandler) SendPrompt(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, map[string]string{
 		"session_id": req.SessionID,
 		"response":   response,
+		"agent_name": cfg.Name,
 	})
 }
 

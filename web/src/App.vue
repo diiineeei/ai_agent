@@ -80,7 +80,7 @@ const navItems = [
   { title: 'Chat', icon: 'mdi-chat', to: '/' },
   { title: 'Arquivos', icon: 'mdi-file-multiple', to: '/files' },
   { title: 'Skills', icon: 'mdi-puzzle', to: '/skills' },
-  { title: 'Configurações', icon: 'mdi-cog', to: '/settings' },
+  { title: 'Agentes', icon: 'mdi-robot-happy', to: '/agents' },
 ]
 
 function toggleTheme() {
