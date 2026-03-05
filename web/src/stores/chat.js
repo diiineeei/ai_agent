@@ -11,8 +11,12 @@ export const useChatStore = defineStore('chat', () => {
   const sessionId = ref(genSessionId())
   const agentConfigId = ref(null)
   const agentName = ref(null)
+  const sessionName = ref(null)
   const loading = ref(false)
   const error = ref(null)
+
+  // name to be saved on the first message (set when creating a new named session)
+  const _pendingName = ref(null)
 
   async function send(prompt) {
     error.value = null
@@ -22,6 +26,14 @@ export const useChatStore = defineStore('chat', () => {
       const { data } = await chatAPI.sendPrompt(sessionId.value, prompt, agentConfigId.value)
       messages.value.push({ role: 'model', text: data.response })
       if (data.agent_name) agentName.value = data.agent_name
+
+      // Persist pending name after first message creates the session doc
+      if (_pendingName.value) {
+        const name = _pendingName.value
+        _pendingName.value = null
+        sessionName.value = name
+        chatAPI.renameSession(sessionId.value, name).catch(() => {})
+      }
     } catch (e) {
       messages.value.pop()
       error.value = e.response?.data?.error || e.message
@@ -55,19 +67,28 @@ export const useChatStore = defineStore('chat', () => {
     error.value = null
   }
 
-  function newSession(configId) {
+  function newSession(configId, name = null) {
     sessionId.value = genSessionId()
     messages.value = []
     error.value = null
     agentConfigId.value = configId ?? null
     agentName.value = null
+    sessionName.value = name || null
+    _pendingName.value = name || null
   }
 
-  function setSession(id) {
+  function setSession(id, name = null) {
     if (!id.trim()) return
     sessionId.value = id.trim()
     messages.value = []
     error.value = null
+    sessionName.value = name || null
+    _pendingName.value = null
+  }
+
+  async function renameCurrentSession(name) {
+    await chatAPI.renameSession(sessionId.value, name)
+    sessionName.value = name || null
   }
 
   return {
@@ -75,6 +96,7 @@ export const useChatStore = defineStore('chat', () => {
     sessionId,
     agentConfigId,
     agentName,
+    sessionName,
     loading,
     error,
     send,
@@ -82,5 +104,6 @@ export const useChatStore = defineStore('chat', () => {
     clearHistory,
     newSession,
     setSession,
+    renameCurrentSession,
   }
 })

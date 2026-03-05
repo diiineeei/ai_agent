@@ -13,6 +13,8 @@ export const chatAPI = {
   deleteHistory: (sessionId) =>
     http.delete('/history', { params: { session_id: sessionId } }),
   listSessions: () => http.get('/sessions'),
+  renameSession: (sessionId, name) =>
+    http.put(`/sessions/${sessionId}/name`, { name }),
 }
 
 export const filesAPI = {

@@ -9,7 +9,7 @@
 
       <div class="flex-grow-1 overflow-hidden">
         <div class="text-subtitle-2 font-weight-bold text-truncate" style="line-height:1.2">
-          {{ store.agentName ?? 'AI Agent' }}
+          {{ store.sessionName || store.agentName || 'AI Agent' }}
         </div>
         <div class="text-caption text-medium-emphasis text-truncate" style="font-family:monospace">
           {{ store.sessionId }}
@@ -210,9 +210,45 @@
             @click="selectSession(s)"
           >
             <template #title>
-              <span class="text-body-2 font-weight-medium" style="font-family:monospace">{{ s.session_id }}</span>
+              <!-- Inline rename -->
+              <div class="d-flex align-center" @click.stop>
+                <template v-if="renamingId === s.session_id">
+                  <v-text-field
+                    v-model="renameValue"
+                    density="compact"
+                    variant="underlined"
+                    hide-details
+                    autofocus
+                    class="flex-grow-1"
+                    style="min-width:0"
+                    @keydown.enter="submitRename(s)"
+                    @keydown.esc="renamingId = null"
+                    @click.stop
+                  />
+                  <v-btn icon size="x-small" variant="text" color="primary" class="ml-1" @click.stop="submitRename(s)">
+                    <v-icon size="16">mdi-check</v-icon>
+                  </v-btn>
+                  <v-btn icon size="x-small" variant="text" class="ml-1" @click.stop="renamingId = null">
+                    <v-icon size="16">mdi-close</v-icon>
+                  </v-btn>
+                </template>
+                <template v-else>
+                  <span class="text-body-2 font-weight-medium text-truncate" @click="selectSession(s)">
+                    {{ s.name || s.session_id }}
+                  </span>
+                  <v-btn
+                    icon size="x-small" variant="text"
+                    class="ml-1 flex-shrink-0"
+                    style="opacity:.5"
+                    @click.stop="startRename(s)"
+                  >
+                    <v-icon size="14">mdi-pencil-outline</v-icon>
+                  </v-btn>
+                </template>
+              </div>
             </template>
             <template #subtitle>
+              <span v-if="s.name" class="text-caption" style="font-family:monospace">{{ s.session_id }}</span>
               {{ getAgentName(s.agent_config_id) }}
               <span class="mx-1 text-disabled">·</span>{{ s.message_count }} msg
               <template v-if="s.updated_at">
@@ -252,10 +288,23 @@
   <v-dialog v-model="newSessionDialog" max-width="440">
     <v-card rounded="lg">
       <v-card-title class="pt-4">Nova sessão</v-card-title>
-      <v-card-text>
-        <v-select v-model="selectedConfigId" :items="agentConfigsStore.configs"
-          item-title="name" item-value="id" label="Selecione o agente"
-          variant="outlined" density="comfortable" hide-details />
+      <v-card-text class="d-flex flex-column gap-3">
+        <v-select
+          v-model="selectedConfigId"
+          :items="agentConfigsStore.configs"
+          item-title="name" item-value="id"
+          label="Selecione o agente *"
+          variant="outlined" density="comfortable" hide-details
+        />
+        <v-text-field
+          v-model="newSessionName"
+          label="Nome da sessão (opcional)"
+          variant="outlined"
+          density="comfortable"
+          hide-details
+          prepend-inner-icon="mdi-tag-outline"
+          clearable
+        />
       </v-card-text>
       <v-card-actions>
         <v-spacer />
@@ -302,8 +351,13 @@ const sessionDialog    = ref(false)
 const newSessionDialog = ref(false)
 const manualSessionId  = ref('')
 const selectedConfigId = ref(null)
+const newSessionName   = ref('')
 const sessions         = ref([])
 const loadingSessions  = ref(false)
+
+// inline rename
+const renamingId  = ref(null)
+const renameValue = ref('')
 
 onMounted(async () => {
   await agentConfigsStore.fetchAll()
@@ -361,6 +415,7 @@ async function onFileSelected(e) {
 
 // ── Sessions ───────────────────────────────────────────
 async function openSessionsDialog() {
+  renamingId.value = null
   sessionDialog.value = true
   manualSessionId.value = ''
   loadingSessions.value = true
@@ -383,7 +438,7 @@ function formatDate(dateStr) {
 }
 
 function selectSession(s) {
-  store.setSession(s.session_id)
+  store.setSession(s.session_id, s.name || null)
   store.agentConfigId = s.agent_config_id || null
   store.agentName     = getAgentName(s.agent_config_id)
   sessionDialog.value = false
@@ -401,9 +456,27 @@ function applyManualSession() {
 
 function startNewSession() {
   const cfg = agentConfigsStore.configs.find((c) => c.id === selectedConfigId.value)
-  store.newSession(selectedConfigId.value)
+  store.newSession(selectedConfigId.value, newSessionName.value.trim() || null)
   if (cfg) store.agentName = cfg.name
   newSessionDialog.value = false
+  newSessionName.value = ''
+}
+
+// ── Inline rename ──────────────────────────────────────
+function startRename(s) {
+  renamingId.value  = s.session_id
+  renameValue.value = s.name || ''
+}
+
+async function submitRename(s) {
+  const name = renameValue.value.trim()
+  try {
+    await chatAPI.renameSession(s.session_id, name)
+    s.name = name
+    // sync store if it's the active session
+    if (s.session_id === store.sessionId) store.sessionName = name || null
+  } catch { /* ignore */ }
+  renamingId.value = null
 }
 
 function scrollToBottom() {

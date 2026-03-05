@@ -101,6 +101,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /prompt", chatHandler.SendPrompt)
 	mux.HandleFunc("GET /sessions", chatHandler.ListSessions)
+	mux.HandleFunc("PUT /sessions/{id}/name", chatHandler.RenameSession)
 	mux.HandleFunc("GET /history", chatHandler.GetHistory)
 	mux.HandleFunc("DELETE /history", chatHandler.DeleteHistory)
 	mux.HandleFunc("POST /files", fileHandler.Upload)

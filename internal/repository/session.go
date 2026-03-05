@@ -18,6 +18,7 @@ type SessionRepository interface {
 	Delete(ctx context.Context, sessionID string) error
 	GetAgentConfigID(ctx context.Context, sessionID string) (string, error)
 	SetAgentConfigID(ctx context.Context, sessionID, agentConfigID string) error
+	SetName(ctx context.Context, sessionID, name string) error
 	ListAll(ctx context.Context) ([]model.SessionSummary, error)
 }
 
@@ -25,6 +26,7 @@ type sessionDoc struct {
 	ID            string          `bson:"_id"`
 	History       []model.Content `bson:"history"`
 	AgentConfigID string          `bson:"agent_config_id,omitempty"`
+	Name          string          `bson:"name,omitempty"`
 	UpdatedAt     time.Time       `bson:"updated_at,omitempty"`
 }
 
@@ -91,10 +93,21 @@ func (r *MongoSessionRepository) SetAgentConfigID(ctx context.Context, sessionID
 	return nil
 }
 
+func (r *MongoSessionRepository) SetName(ctx context.Context, sessionID, name string) error {
+	filter := bson.M{"_id": sessionID}
+	update := bson.M{"$set": bson.M{"name": name}}
+	_, err := r.coll.UpdateOne(ctx, filter, update, options.UpdateOne().SetUpsert(true))
+	if err != nil {
+		return fmt.Errorf("setting name for session %q: %w", sessionID, err)
+	}
+	return nil
+}
+
 func (r *MongoSessionRepository) ListAll(ctx context.Context) ([]model.SessionSummary, error) {
 	pipeline := mongo.Pipeline{
 		bson.D{{Key: "$project", Value: bson.D{
 			{Key: "agent_config_id", Value: 1},
+			{Key: "name", Value: 1},
 			{Key: "updated_at", Value: 1},
 			{Key: "message_count", Value: bson.D{
 				{Key: "$size", Value: bson.D{

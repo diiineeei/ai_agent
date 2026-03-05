@@ -123,6 +123,23 @@ func (h *ChatHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, sessions)
 }
 
+// RenameSession handles PUT /sessions/{id}/name — sets an optional display name for a session.
+func (h *ChatHandler) RenameSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		jsonError(w, "body inválido: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.sessionRepo.SetName(r.Context(), sessionID, body.Name); err != nil {
+		jsonError(w, "erro ao renomear sessão: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"message": "sessão renomeada com sucesso"})
+}
+
 // DeleteHistory handles DELETE /history — clears the session history.
 func (h *ChatHandler) DeleteHistory(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("session_id")
