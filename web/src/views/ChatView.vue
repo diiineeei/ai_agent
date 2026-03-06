@@ -23,99 +23,114 @@
         </div>
       </div>
 
-      <v-btn icon size="small" variant="text" :loading="loadingHistory" @click="loadHistory">
-        <v-icon>mdi-history</v-icon>
-        <v-tooltip activator="parent" location="bottom">Carregar histórico</v-tooltip>
-      </v-btn>
-      <v-btn icon size="small" variant="text" @click="openSessionsDialog">
-        <v-icon>mdi-folder-open-outline</v-icon>
-        <v-tooltip activator="parent" location="bottom">Sessões</v-tooltip>
-      </v-btn>
-      <v-btn icon size="small" variant="text" color="primary" @click="newSessionDialog = true">
-        <v-icon>mdi-plus-circle-outline</v-icon>
-        <v-tooltip activator="parent" location="bottom">Nova sessão</v-tooltip>
-      </v-btn>
-      <v-menu location="bottom end" :close-on-content-click="false">
+      <v-menu location="bottom end" :close-on-content-click="false" min-width="260">
         <template #activator="{ props: menuProps }">
-          <v-btn icon size="small" variant="text" :color="ttsEnabled ? 'primary' : undefined" v-bind="menuProps">
-            <v-icon size="18">{{ ttsEnabled ? 'mdi-volume-high' : 'mdi-volume-off' }}</v-icon>
-            <v-tooltip activator="parent" location="bottom">Voz</v-tooltip>
+          <v-btn icon size="small" variant="text" v-bind="menuProps">
+            <v-icon size="20">mdi-dots-vertical</v-icon>
           </v-btn>
         </template>
-        <v-card min-width="260" rounded="lg">
+
+        <v-card rounded="lg">
           <v-list density="compact" nav>
-            <v-list-item :title="ttsEnabled ? 'Desativar voz' : 'Ativar voz'" @click="toggleTts">
+
+            <!-- Sessão -->
+            <v-list-subheader>Sessão</v-list-subheader>
+            <v-list-item
+              prepend-icon="mdi-history"
+              title="Carregar histórico"
+              rounded="lg"
+              :disabled="loadingHistory"
+              @click="loadHistory"
+            />
+            <v-list-item
+              prepend-icon="mdi-folder-open-outline"
+              title="Sessões"
+              rounded="lg"
+              @click="openSessionsDialog"
+            />
+            <v-list-item
+              prepend-icon="mdi-plus-circle-outline"
+              title="Nova sessão"
+              rounded="lg"
+              base-color="primary"
+              @click="newSessionDialog = true"
+            />
+
+            <!-- Agente (só quando há agente selecionado) -->
+            <template v-if="currentAgentConfig">
+              <v-divider class="my-1" />
+              <v-list-subheader>Agente</v-list-subheader>
+              <v-list-item
+                prepend-icon="mdi-cog-outline"
+                title="Editar agente"
+                rounded="lg"
+                @click="router.push({ name: 'agents', query: { edit: currentAgentConfig.id } })"
+              />
+              <v-list-item rounded="lg" class="py-1">
+                <template #prepend>
+                  <v-icon class="mr-3">mdi-puzzle-outline</v-icon>
+                </template>
+                <v-list-item-title>Skills ativas</v-list-item-title>
+                <template #append>
+                  <div class="d-flex flex-wrap gap-1 justify-end" style="max-width:140px">
+                    <v-chip
+                      v-for="s in currentAgentConfig.enabled_skills"
+                      :key="s"
+                      size="x-small"
+                      variant="tonal"
+                      color="primary"
+                      :prepend-icon="skillIcon(s)"
+                    >{{ skillLabel(s) }}</v-chip>
+                    <span v-if="!currentAgentConfig.enabled_skills?.length" class="text-caption text-disabled">Nenhuma</span>
+                  </div>
+                </template>
+              </v-list-item>
+            </template>
+
+            <!-- Configurações -->
+            <v-divider class="my-1" />
+            <v-list-subheader>Configurações</v-list-subheader>
+            <v-list-item rounded="lg" @click="toggleTts">
+              <template #prepend>
+                <v-icon class="mr-3">{{ ttsEnabled ? 'mdi-volume-high' : 'mdi-volume-off' }}</v-icon>
+              </template>
+              <v-list-item-title>Voz</v-list-item-title>
               <template #append>
                 <v-switch :model-value="ttsEnabled" color="primary" hide-details density="compact" @click.stop="toggleTts" />
               </template>
             </v-list-item>
-          </v-list>
-          <v-divider />
-          <v-list density="compact" nav max-height="280" class="overflow-y-auto">
-            <v-list-subheader>Voz</v-list-subheader>
             <v-list-item
-              v-for="v in ttsVoices"
-              :key="v.name"
-              :title="v.name"
-              :subtitle="v.lang"
-              :active="selectedVoice?.name === v.name"
-              active-color="primary"
+              v-if="ttsEnabled"
+              prepend-icon="mdi-account-voice"
+              title="Selecionar voz"
               rounded="lg"
-              @click="selectedVoice = v"
+              @click="voiceDialog = true"
             />
-            <v-list-item v-if="ttsVoices.length === 0" title="Nenhuma voz disponível" disabled />
-          </v-list>
-        </v-card>
-      </v-menu>
-      <v-btn
-        v-if="currentAgentConfig"
-        icon size="small" variant="text"
-        @click="router.push({ name: 'agents', query: { edit: currentAgentConfig.id } })"
-      >
-        <v-icon size="18">mdi-cog-outline</v-icon>
-        <v-tooltip activator="parent" location="bottom">Editar agente</v-tooltip>
-      </v-btn>
+            <v-list-item rounded="lg" @click="showTokens = !showTokens">
+              <template #prepend>
+                <v-icon class="mr-3">mdi-counter</v-icon>
+              </template>
+              <v-list-item-title>Mostrar tokens</v-list-item-title>
+              <template #append>
+                <v-switch :model-value="showTokens" color="primary" hide-details density="compact" @click.stop="showTokens = !showTokens" />
+              </template>
+            </v-list-item>
 
-      <v-menu v-if="currentAgentConfig" location="bottom end" :close-on-content-click="false">
-        <template #activator="{ props: menuProps }">
-          <v-btn icon size="small" variant="text" v-bind="menuProps">
-            <v-icon size="18">mdi-puzzle-outline</v-icon>
-            <v-tooltip activator="parent" location="bottom">Skills ativas</v-tooltip>
-          </v-btn>
-        </template>
-        <v-card min-width="240" rounded="lg">
-          <v-list density="compact" nav>
-            <v-list-subheader>Skills ativas</v-list-subheader>
-            <template v-if="currentAgentConfig.enabled_skills?.length">
+            <!-- Perigo -->
+            <template v-if="store.messages.length > 0">
+              <v-divider class="my-1" />
               <v-list-item
-                v-for="s in currentAgentConfig.enabled_skills"
-                :key="s"
-                :title="skillLabel(s)"
-                :prepend-icon="skillIcon(s)"
+                prepend-icon="mdi-delete-outline"
+                title="Limpar histórico"
                 rounded="lg"
+                base-color="error"
+                @click="clearDialog = true"
               />
             </template>
-            <v-list-item v-else title="Nenhuma skill ativa" disabled />
+
           </v-list>
         </v-card>
       </v-menu>
-
-      <v-btn
-        icon size="small" variant="text"
-        :color="showTokens ? 'primary' : undefined"
-        @click="showTokens = !showTokens"
-      >
-        <v-icon size="18">mdi-counter</v-icon>
-        <v-tooltip activator="parent" location="bottom">{{ showTokens ? 'Ocultar tokens' : 'Mostrar tokens consumidos' }}</v-tooltip>
-      </v-btn>
-      <v-btn
-        v-if="store.messages.length > 0"
-        icon size="small" variant="text" color="error"
-        @click="clearDialog = true"
-      >
-        <v-icon>mdi-delete-outline</v-icon>
-        <v-tooltip activator="parent" location="bottom">Limpar histórico</v-tooltip>
-      </v-btn>
     </div>
 
     <v-divider />
@@ -525,6 +540,33 @@
     </v-card>
   </v-dialog>
 
+  <!-- ── Voice selector dialog ──────────────────────── -->
+  <v-dialog v-model="voiceDialog" max-width="360" scrollable>
+    <v-card rounded="lg">
+      <v-card-title class="pt-4">Selecionar voz</v-card-title>
+      <v-divider />
+      <v-card-text class="pa-0" style="max-height:360px">
+        <v-list density="compact" nav>
+          <v-list-item
+            v-for="v in ttsVoices"
+            :key="v.name"
+            :title="v.name"
+            :subtitle="v.lang"
+            :active="selectedVoice?.name === v.name"
+            active-color="primary"
+            rounded="lg"
+            @click="selectedVoice = v; voiceDialog = false"
+          />
+          <v-list-item v-if="ttsVoices.length === 0" title="Nenhuma voz disponível" disabled />
+        </v-list>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn @click="voiceDialog = false">Fechar</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
   <!-- ── Clear confirm dialog ────────────────────────── -->
   <v-dialog v-model="clearDialog" max-width="380">
     <v-card rounded="lg">
@@ -706,6 +748,7 @@ const suggestions        = ref([])
 const loadingSuggestions = ref(false)
 
 const clearDialog      = ref(false)
+const voiceDialog      = ref(false)
 const sessionDialog    = ref(false)
 const newSessionDialog = ref(false)
 const manualSessionId  = ref('')
