@@ -39,10 +39,16 @@ func NewMongoSessionRepository(coll *mongo.Collection) *MongoSessionRepository {
 }
 
 func (r *MongoSessionRepository) Save(ctx context.Context, sessionID string, history []model.Content) error {
+	now := time.Now()
+	for i := range history {
+		if history[i].CreatedAt.IsZero() {
+			history[i].CreatedAt = now
+		}
+	}
 	filter := bson.M{"_id": sessionID}
 	update := bson.M{"$set": bson.M{
 		"history":    history,
-		"updated_at": time.Now(),
+		"updated_at": now,
 	}}
 	_, err := r.coll.UpdateOne(ctx, filter, update, options.UpdateOne().SetUpsert(true))
 	if err != nil {

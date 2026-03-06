@@ -52,9 +52,9 @@ func (a *OllamaAgent) AddFunctionCall(fn *FunctionDeclaration) error {
 // ── Ollama API types ─────────────────────────────────────
 
 type ollamaMessage struct {
-	Role      string          `json:"role"`
-	Content   string          `json:"content"`
-	ToolCalls []ollamaCall    `json:"tool_calls,omitempty"`
+	Role      string       `json:"role"`
+	Content   string       `json:"content"`
+	ToolCalls []ollamaCall `json:"tool_calls,omitempty"`
 }
 
 type ollamaCall struct {
@@ -62,8 +62,22 @@ type ollamaCall struct {
 }
 
 type ollamaFunc struct {
-	Name      string         `json:"name"`
-	Arguments map[string]any `json:"arguments"`
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"` // some models return object, others a JSON string
+}
+
+// args parses Arguments tolerating both object {"key":"val"} and JSON-encoded string formats.
+func (f ollamaFunc) args() map[string]any {
+	var m map[string]any
+	if json.Unmarshal(f.Arguments, &m) == nil {
+		return m
+	}
+	// fallback: some models encode arguments as a JSON string
+	var s string
+	if json.Unmarshal(f.Arguments, &s) == nil {
+		json.Unmarshal([]byte(s), &m) //nolint:errcheck
+	}
+	return m
 }
 
 type ollamaTool struct {
@@ -153,7 +167,7 @@ func (a *OllamaAgent) chat(ctx context.Context, messages []ollamaMessage, tools 
 		if !ok {
 			return "", nil, TokenUsage{}, fmt.Errorf("model requested unknown function %q", tc.Function.Name)
 		}
-		result, err := fn.FunctionCall(ctx, tc.Function.Arguments)
+		result, err := fn.FunctionCall(ctx, tc.Function.args())
 		if err != nil {
 			return "", nil, TokenUsage{}, fmt.Errorf("executing function %q: %w", tc.Function.Name, err)
 		}
@@ -226,13 +240,15 @@ func modelContentsToOllama(contents []model.Content) []ollamaMessage {
 		for _, p := range c.Parts {
 			switch {
 			case p.FunctionResponse != nil:
+				// Tool result stored as FunctionResponse — convert back to "tool" role
 				resultJSON, _ := json.Marshal(p.FunctionResponse.Response)
 				msgs = append(msgs, ollamaMessage{Role: "tool", Content: string(resultJSON)})
 			case p.FunctionCall != nil:
+				argsRaw, _ := json.Marshal(p.FunctionCall.Args)
 				msgs = append(msgs, ollamaMessage{
 					Role: "assistant",
 					ToolCalls: []ollamaCall{{
-						Function: ollamaFunc{Name: p.FunctionCall.Name, Arguments: p.FunctionCall.Args},
+						Function: ollamaFunc{Name: p.FunctionCall.Name, Arguments: json.RawMessage(argsRaw)},
 					}},
 				})
 			case p.Text != "":
@@ -264,7 +280,7 @@ func ollamaToModelContents(msgs []ollamaMessage) []model.Content {
 						FunctionCall: &struct {
 							Name string         `bson:"name"  json:"name"`
 							Args map[string]any `bson:"args"  json:"args"`
-						}{Name: tc.Function.Name, Args: tc.Function.Arguments},
+						}{Name: tc.Function.Name, Args: tc.Function.args()},
 					})
 				}
 				contents = append(contents, model.Content{Role: "model", Parts: parts})
@@ -275,10 +291,17 @@ func ollamaToModelContents(msgs []ollamaMessage) []model.Content {
 				})
 			}
 		case "tool":
-			// Store as user FunctionResponse so history can be converted back for Ollama
+			// Store as FunctionResponse so modelContentsToOllama can reconstruct "tool" role correctly
+			var resp any
+			json.Unmarshal([]byte(m.Content), &resp) //nolint:errcheck
 			contents = append(contents, model.Content{
-				Role:  "user",
-				Parts: []model.Part{{Text: m.Content}},
+				Role: "user",
+				Parts: []model.Part{{
+					FunctionResponse: &struct {
+						Name     string `bson:"name"     json:"name"`
+						Response any    `bson:"response" json:"response"`
+					}{Name: "tool", Response: resp},
+				}},
 			})
 		}
 	}

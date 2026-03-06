@@ -167,22 +167,27 @@
           </v-avatar>
 
           <!-- User -->
-          <v-sheet
-            v-if="msg.role === 'user'"
-            color="primary"
-            rounded="xl"
-            class="px-4 py-3 bubble-user"
-          >
-            <p class="text-body-1 text-on-primary mb-0" style="white-space:pre-wrap;line-height:1.55">{{ msg.text }}</p>
-          </v-sheet>
+          <div v-if="msg.role === 'user'" class="d-flex flex-column align-end">
+            <v-sheet color="primary" rounded="xl" class="px-4 py-3 bubble-user">
+              <p class="text-body-1 text-on-primary mb-0" style="white-space:pre-wrap;line-height:1.55">{{ msg.text }}</p>
+            </v-sheet>
+            <span v-if="msg.createdAt" class="text-caption text-disabled mt-1 mr-1">{{ formatTime(msg.createdAt) }}</span>
+          </div>
 
           <!-- Model -->
           <div v-else class="d-flex flex-column bubble-model">
             <v-sheet rounded="xl" class="border px-4 py-3">
               <div class="markdown-body text-body-1" v-html="renderMarkdown(msg.text)" />
             </v-sheet>
-            <!-- Rating buttons + token info -->
+            <!-- Rating buttons + copy + token info + timestamp -->
             <div class="d-flex align-center gap-1 mt-1 pl-1">
+              <v-btn
+                icon size="x-small" variant="text"
+                @click="copyMessage(msg.text, i)"
+              >
+                <v-icon size="15">{{ copiedIdx === i ? 'mdi-check' : 'mdi-content-copy' }}</v-icon>
+                <v-tooltip activator="parent" location="top">Copiar resposta</v-tooltip>
+              </v-btn>
               <v-btn
                 icon size="x-small" variant="text"
                 :color="ratings[modelSeqOf(i)] === 'up' ? 'success' : undefined"
@@ -199,6 +204,7 @@
               >
                 <v-icon size="15">{{ ratings[modelSeqOf(i)] === 'down' ? 'mdi-thumb-down' : 'mdi-thumb-down-outline' }}</v-icon>
               </v-btn>
+              <span v-if="msg.createdAt" class="text-caption text-disabled ml-1">{{ formatTime(msg.createdAt) }}</span>
               <v-chip
                 v-if="showTokens && msg.tokenUsage"
                 size="x-small" variant="text"
@@ -313,14 +319,18 @@
           <v-btn
             v-if="speechSupported"
             icon size="small" variant="text"
-            :color="listening ? (micAutoSend ? 'warning' : 'error') : (micAutoSend ? 'warning' : undefined)"
-            :class="{ 'mic-pulse': listening }"
-            @click="toggleListening"
-            @dblclick.prevent="toggleMicMode"
+            :color="listening ? 'error' : holdRecording ? 'warning' : undefined"
+            :class="{ 'mic-pulse': listening || holdRecording }"
+            @pointerdown.prevent="onMicDown"
+            @pointerup="onMicUp"
+            @pointercancel="onMicCancel"
+            @contextmenu.prevent
           >
-            <v-icon size="20">{{ listening ? 'mdi-microphone' : 'mdi-microphone-outline' }}</v-icon>
+            <v-icon size="20">
+              {{ listening ? 'mdi-stop' : holdRecording ? 'mdi-microphone' : 'mdi-microphone-outline' }}
+            </v-icon>
             <v-tooltip activator="parent" location="top">
-              {{ listening ? 'Parar gravação' : micAutoSend ? 'Falar e enviar automaticamente (duplo clique para desativar)' : 'Falar mensagem (duplo clique = envio automático)' }}
+              {{ listening ? 'Clique para parar' : 'Clique para gravar · Segure para enviar automaticamente' }}
             </v-tooltip>
           </v-btn>
           <v-spacer />
@@ -504,10 +514,11 @@ const uploadStatus = ref(null)
 // ratings: { [messageIndex]: 'up' | 'down' }
 const ratings    = ref({})
 const showTokens = ref(false)
+const copiedIdx  = ref(null)
 
 // ── Voice ──────────────────────────────────────────────
-const listening       = ref(false)
-const micAutoSend     = ref(false)
+const listening       = ref(false)   // toggle mode: recording, click to stop
+const holdRecording   = ref(false)   // hold mode: recording while held
 const ttsEnabled      = ref(false)
 const ttsVoices       = ref([])
 const selectedVoice   = ref(null)
@@ -516,7 +527,6 @@ const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecogn
 function loadVoices() {
   const all = window.speechSynthesis.getVoices()
   if (!all.length) return
-  // pt-BR primeiro, depois o resto ordenado por língua
   ttsVoices.value = [
     ...all.filter(v => v.lang.startsWith('pt')),
     ...all.filter(v => !v.lang.startsWith('pt')),
@@ -529,12 +539,80 @@ loadVoices()
 window.speechSynthesis.addEventListener('voiceschanged', loadVoices)
 
 let recognition = null
+let holdTimer    = null
+let isHoldMode   = false
+let finalTranscript = ''
+const HOLD_MS = 350
+
 if (speechSupported) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   recognition = new SR()
   recognition.lang = 'pt-BR'
   recognition.continuous = false
   recognition.interimResults = true
+
+  recognition.onresult = (e) => {
+    let interim = ''
+    finalTranscript = ''
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript
+      if (e.results[i].isFinal) finalTranscript += t
+      else interim = t
+    }
+    input.value = finalTranscript || interim
+  }
+
+  recognition.onend = () => {
+    if (isHoldMode) {
+      holdRecording.value = false
+      if (finalTranscript.trim()) sendMessage()
+    } else {
+      listening.value = false
+    }
+    isHoldMode = false
+  }
+
+  recognition.onerror = () => {
+    listening.value = false
+    holdRecording.value = false
+    isHoldMode = false
+  }
+}
+
+function onMicDown() {
+  if (!recognition) return
+  isHoldMode = false
+  holdTimer = setTimeout(() => {
+    isHoldMode = true
+    holdRecording.value = true
+    finalTranscript = ''
+    try { recognition.start() } catch {}
+  }, HOLD_MS)
+}
+
+function onMicUp() {
+  clearTimeout(holdTimer)
+  if (isHoldMode) {
+    // hold mode: stop and auto-send (handled in onend)
+    recognition.stop()
+  } else {
+    // quick tap: toggle listening
+    if (listening.value) {
+      recognition.stop()
+    } else {
+      listening.value = true
+      finalTranscript = ''
+      try { recognition.start() } catch {}
+    }
+  }
+}
+
+function onMicCancel() {
+  clearTimeout(holdTimer)
+  if (holdRecording.value || listening.value) recognition?.stop()
+  holdRecording.value = false
+  listening.value = false
+  isHoldMode = false
 }
 
 const suggestions = ref([])
@@ -570,7 +648,7 @@ watch(() => store.sessionId, () => {
   ratings.value = {}
   suggestions.value = []
   window.speechSynthesis?.cancel()
-  if (listening.value) recognition?.stop()
+  onMicCancel()
 })
 
 // ── Messaging ──────────────────────────────────────────
@@ -634,6 +712,13 @@ async function openSessionsDialog() {
 function getAgentName(id) {
   if (!id) return '—'
   return agentConfigsStore.configs.find((c) => c.id === id)?.name ?? id
+}
+
+function formatTime(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
 function formatDate(dateStr) {
@@ -700,6 +785,12 @@ function modelSeqOf(flatIdx) {
   return n
 }
 
+async function copyMessage(text, idx) {
+  await navigator.clipboard.writeText(text)
+  copiedIdx.value = idx
+  setTimeout(() => { copiedIdx.value = null }, 2000)
+}
+
 async function rateMessage(flatIdx, rating) {
   const seq = modelSeqOf(flatIdx)
   if (ratings.value[seq] === rating) return
@@ -720,42 +811,6 @@ function scrollToBottom() {
   nextTick(() => {
     if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
   })
-}
-
-// ── Voz ────────────────────────────────────────────────
-function toggleListening() {
-  if (!recognition) return
-  if (listening.value) {
-    recognition.stop()
-    return
-  }
-
-  let finalTranscript = ''
-
-  recognition.onstart = () => { listening.value = true }
-
-  recognition.onresult = (e) => {
-    let interim = ''
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const t = e.results[i][0].transcript
-      if (e.results[i].isFinal) finalTranscript += t
-      else interim = t
-    }
-    input.value = finalTranscript || interim
-  }
-
-  recognition.onend = () => {
-    listening.value = false
-    if (micAutoSend.value && finalTranscript.trim()) sendMessage()
-  }
-
-  recognition.onerror = () => { listening.value = false }
-
-  recognition.start()
-}
-
-function toggleMicMode() {
-  micAutoSend.value = !micAutoSend.value
 }
 
 function toggleTts() {

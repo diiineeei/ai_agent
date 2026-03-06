@@ -20,11 +20,11 @@ export const useChatStore = defineStore('chat', () => {
 
   async function send(prompt) {
     error.value = null
-    messages.value.push({ role: 'user', text: prompt })
+    messages.value.push({ role: 'user', text: prompt, createdAt: new Date().toISOString() })
     loading.value = true
     try {
       const { data } = await chatAPI.sendPrompt(sessionId.value, prompt, agentConfigId.value)
-      messages.value.push({ role: 'model', text: data.response, tokenUsage: data.token_usage ?? null })
+      messages.value.push({ role: 'model', text: data.response, tokenUsage: data.token_usage ?? null, createdAt: new Date().toISOString() })
       if (data.agent_name) agentName.value = data.agent_name
 
       // Persist pending name after first message creates the session doc
@@ -54,6 +54,7 @@ export const useChatStore = defineStore('chat', () => {
         .map((c) => ({
           role: c.role,
           text: c.parts?.find((p) => p.text)?.text || '',
+          createdAt: c.created_at ?? null,
         }))
         .filter((m) => m.text)
     } catch (e) {

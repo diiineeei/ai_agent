@@ -3,7 +3,7 @@
 
     <!-- Page header -->
     <div class="d-flex align-center mb-6">
-      <v-avatar color="secondary" variant="tonal" size="48" rounded="lg" class="mr-3">
+      <v-avatar color="primary" variant="tonal" size="48" rounded="lg" class="mr-3">
         <v-icon size="26">mdi-puzzle-outline</v-icon>
       </v-avatar>
       <div class="flex-grow-1">
@@ -38,12 +38,12 @@
           <!-- Card header -->
           <div class="pa-4 d-flex align-center">
             <v-avatar
-              :color="skill.enabled ? 'secondary' : undefined"
+              :color="skill.enabled ? 'primary' : undefined"
               :variant="skill.enabled ? 'tonal' : 'outlined'"
               size="48"
               class="flex-shrink-0 mr-3"
             >
-              <v-icon :color="skill.enabled ? 'secondary' : 'medium-emphasis'">
+              <v-icon :color="skill.enabled ? 'primary' : 'medium-emphasis'">
                 {{ skillIcon(skill.name) }}
               </v-icon>
             </v-avatar>
@@ -59,7 +59,7 @@
 
             <v-switch
               :model-value="skill.enabled"
-              color="secondary"
+              color="primary"
               hide-details
               density="compact"
               :loading="toggling === skill.name"
@@ -133,8 +133,9 @@ async function toggle(name) {
 }
 
 const SKILL_META = {
-  weather:          { label: 'Clima',              icon: 'mdi-weather-partly-cloudy' },
-  search_documents: { label: 'Busca em Documentos', icon: 'mdi-text-search' },
+  weather:           { label: 'Clima',              icon: 'mdi-weather-partly-cloudy' },
+  search_documents:  { label: 'Busca em Documentos', icon: 'mdi-text-search' },
+  suggest_questions: { label: 'Sugestões',           icon: 'mdi-help-circle-outline' },
 }
 
 const skillLabel = (name) => SKILL_META[name]?.label ?? name

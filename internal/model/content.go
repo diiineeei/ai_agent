@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 type Part struct {
 	Text         string `bson:"text,omitempty"          json:"text,omitempty"`
 	FunctionCall *struct {
@@ -13,6 +15,7 @@ type Part struct {
 }
 
 type Content struct {
-	Role  string `bson:"role"  json:"role"`
-	Parts []Part `bson:"parts" json:"parts"`
+	Role      string    `bson:"role"       json:"role"`
+	Parts     []Part    `bson:"parts"      json:"parts"`
+	CreatedAt time.Time `bson:"created_at" json:"created_at"`
 }
