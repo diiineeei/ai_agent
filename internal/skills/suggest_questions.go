@@ -1,8 +1,12 @@
 package skills
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
 	"ai_agent/internal/agent"
@@ -65,7 +69,6 @@ func (s *SuggestQuestionsSkill) Declaration() *agent.FunctionDeclaration {
 
 func (s *SuggestQuestionsSkill) execute(ctx context.Context, args map[string]any) (map[string]any, error) {
 	focus, _ := args["focus"].(string)
-
 	questions, err := GenerateSuggestions(ctx, s.geminiClient, s.sessionRepo, s.agentConfig, s.sessionID, focus)
 	if err != nil {
 		return nil, err
@@ -74,6 +77,7 @@ func (s *SuggestQuestionsSkill) execute(ctx context.Context, args map[string]any
 }
 
 // GenerateSuggestions é a lógica compartilhada entre a skill e o handler HTTP.
+// Usa o provider do agente configurado: Gemini ou Ollama.
 func GenerateSuggestions(
 	ctx context.Context,
 	geminiClient *genai.Client,
@@ -123,22 +127,72 @@ func GenerateSuggestions(
 		focusLine,
 	)
 
-	modelName := agentConfig.Model
+	if agentConfig.Provider == "ollama" {
+		return generateWithOllama(ctx, agentConfig, prompt)
+	}
+	return generateWithGemini(ctx, geminiClient, agentConfig.Model, prompt)
+}
+
+func generateWithGemini(ctx context.Context, client *genai.Client, modelName, prompt string) ([]string, error) {
 	if modelName == "" {
 		modelName = "gemini-2.5-flash"
 	}
-
-	chat, err := geminiClient.Chats.Create(ctx, modelName, &genai.GenerateContentConfig{}, nil)
+	chat, err := client.Chats.Create(ctx, modelName, &genai.GenerateContentConfig{}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("criando chat para sugestões: %w", err)
 	}
-
 	resp, err := chat.SendMessage(ctx, genai.Part{Text: prompt})
 	if err != nil {
 		return nil, fmt.Errorf("gerando sugestões: %w", err)
 	}
+	return parseQuestions(resp.Text()), nil
+}
 
-	lines := strings.Split(strings.TrimSpace(resp.Text()), "\n")
+func generateWithOllama(ctx context.Context, agentConfig model.AgentConfig, prompt string) ([]string, error) {
+	baseURL := strings.TrimRight(agentConfig.BaseURL, "/")
+	if baseURL == "" {
+		baseURL = "http://localhost:11434"
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"model": agentConfig.Model,
+		"messages": []map[string]any{
+			{"role": "user", "content": prompt},
+		},
+		"stream": false,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/chat", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("criando request ollama: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("chamando ollama: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ollama retornou %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+
+	var result struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decodificando resposta ollama: %w", err)
+	}
+
+	return parseQuestions(result.Message.Content), nil
+}
+
+func parseQuestions(text string) []string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
 	questions := make([]string, 0, 3)
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -146,7 +200,7 @@ func GenerateSuggestions(
 			questions = append(questions, line)
 		}
 	}
-	return questions, nil
+	return questions
 }
 
 var _ Skill = (*SuggestQuestionsSkill)(nil)
