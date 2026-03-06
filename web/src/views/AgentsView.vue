@@ -183,6 +183,20 @@
           </v-col>
         </v-row>
 
+        <!-- Ollama info -->
+        <v-alert
+          v-if="form.provider === 'ollama'"
+          type="info"
+          variant="tonal"
+          density="compact"
+          rounded="lg"
+          class="mt-3"
+          icon="mdi-information-outline"
+        >
+          Modelos menores como <strong>llama3.2:1b</strong> e <strong>3b</strong> têm comportamento instável com skills.
+          Para uso com skills, prefira <strong>llama3.1</strong>, <strong>llama3.2</strong> (8b) ou <strong>qwen2.5</strong>.
+        </v-alert>
+
         <!-- Base URL (Ollama only) -->
         <v-row v-if="form.provider === 'ollama'" dense class="mt-2">
           <v-col cols="12">

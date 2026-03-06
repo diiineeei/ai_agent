@@ -231,7 +231,9 @@
         <v-sheet rounded="xl" class="border px-4 py-3" style="border-bottom-left-radius:4px">
           <div class="d-flex align-center gap-2">
             <div class="typing-dots"><span /><span /><span /></div>
-            <span class="text-caption text-medium-emphasis thinking-text">Pensando…</span>
+            <transition name="thinking-msg" mode="out-in">
+              <span :key="thinkingText" class="text-caption text-medium-emphasis">{{ thinkingText }}</span>
+            </transition>
           </div>
         </v-sheet>
       </div>
@@ -530,6 +532,33 @@ const uploadStatus = ref(null)
 const ratings    = ref({})
 const showTokens = ref(false)
 const copiedIdx  = ref(null)
+
+const THINKING_MESSAGES = [
+  'Pensando…',
+  'Analisando sua pergunta…',
+  'Verificando ferramentas disponíveis…',
+  'Consultando base de conhecimento…',
+  'Processando contexto…',
+  'Elaborando resposta…',
+  'Revisando informações…',
+]
+const thinkingText  = ref(THINKING_MESSAGES[0])
+let thinkingTimer   = null
+let thinkingIdx     = 0
+
+watch(() => store.loading, (loading) => {
+  if (loading) {
+    thinkingIdx = 0
+    thinkingText.value = THINKING_MESSAGES[0]
+    thinkingTimer = setInterval(() => {
+      thinkingIdx = (thinkingIdx + 1) % THINKING_MESSAGES.length
+      thinkingText.value = THINKING_MESSAGES[thinkingIdx]
+    }, 2000)
+  } else {
+    clearInterval(thinkingTimer)
+    thinkingText.value = THINKING_MESSAGES[0]
+  }
+})
 
 // ── Voice ──────────────────────────────────────────────
 const listening       = ref(false)   // toggle mode: recording, click to stop
@@ -892,6 +921,11 @@ function applySuggestion(question) {
   0%, 80%, 100% { transform: scale(.8); opacity: .4; }
   40%           { transform: scale(1.2); opacity: 1;  }
 }
+
+/* Thinking message transition */
+.thinking-msg-enter-active, .thinking-msg-leave-active { transition: opacity .3s, transform .3s; }
+.thinking-msg-enter-from { opacity: 0; transform: translateY(4px); }
+.thinking-msg-leave-to   { opacity: 0; transform: translateY(-4px); }
 
 /* Thinking avatar pulse */
 @keyframes thinking-pulse {
