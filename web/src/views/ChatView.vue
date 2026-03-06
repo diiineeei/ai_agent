@@ -4,7 +4,8 @@
     <!-- ── Header ──────────────────────────────────────── -->
     <div class="d-flex align-center gap-1 px-4" style="height: 64px; flex-shrink: 0">
       <v-avatar color="primary" size="40" class="mr-1">
-        <v-icon>mdi-robot-happy</v-icon>
+        <v-img v-if="currentAgentConfig?.avatar" :src="currentAgentConfig.avatar" cover />
+        <v-icon v-else>mdi-robot-happy</v-icon>
       </v-avatar>
 
       <div class="flex-grow-1 overflow-hidden">
@@ -169,7 +170,8 @@
             >
               <div class="pa-4 d-flex align-center gap-3">
                 <v-avatar color="primary" variant="tonal" size="44" class="flex-shrink-0">
-                  <span class="text-body-1 font-weight-bold">{{ cfg.name[0].toUpperCase() }}</span>
+                  <v-img v-if="cfg.avatar" :src="cfg.avatar" cover />
+                  <span v-else class="text-body-1 font-weight-bold">{{ cfg.name[0].toUpperCase() }}</span>
                 </v-avatar>
                 <div class="overflow-hidden flex-grow-1">
                   <div class="text-body-2 font-weight-bold text-truncate">{{ cfg.name }}</div>

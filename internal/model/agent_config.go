@@ -9,6 +9,7 @@ import (
 type AgentConfig struct {
 	ID                bson.ObjectID `bson:"_id,omitempty"      json:"id"`
 	Name              string        `bson:"name"               json:"name"`
+	Avatar            string        `bson:"avatar,omitempty"   json:"avatar"` // base64 data URL
 	SystemInstruction string        `bson:"system_instruction" json:"system_instruction"`
 	Model             string        `bson:"model"              json:"model"`
 	Provider          string        `bson:"provider,omitempty" json:"provider"`  // "gemini" | "ollama" (default "gemini")

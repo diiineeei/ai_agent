@@ -78,6 +78,7 @@ func (r *MongoAgentConfigRepository) Update(ctx context.Context, id string, cfg 
 	}
 	update := bson.M{"$set": bson.M{
 		"name":               cfg.Name,
+		"avatar":             cfg.Avatar,
 		"system_instruction": cfg.SystemInstruction,
 		"model":              cfg.Model,
 		"provider":           cfg.Provider,

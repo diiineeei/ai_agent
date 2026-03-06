@@ -39,7 +39,8 @@
           <!-- Card header -->
           <div class="pa-4 d-flex align-center">
             <v-avatar color="primary" variant="tonal" size="44" class="flex-shrink-0 mr-3">
-              <span class="text-body-1 font-weight-bold">{{ cfg.name[0].toUpperCase() }}</span>
+              <v-img v-if="cfg.avatar" :src="cfg.avatar" cover />
+              <span v-else class="text-body-1 font-weight-bold">{{ cfg.name[0].toUpperCase() }}</span>
             </v-avatar>
             <div class="overflow-hidden flex-grow-1">
               <div class="text-body-1 font-weight-bold text-truncate">{{ cfg.name }}</div>
@@ -121,10 +122,17 @@
   <v-dialog v-model="formDialog" max-width="620" persistent scrollable>
     <v-card rounded="xl">
 
+      <!-- Hidden file input -->
+      <input ref="avatarInput" type="file" accept="image/*" style="display:none" @change="onAvatarSelected" />
+
       <!-- Dialog header -->
       <div class="pa-5 d-flex align-center">
-        <v-avatar color="primary" variant="tonal" size="52" rounded="lg" class="mr-4">
-          <v-icon size="28">mdi-robot-happy</v-icon>
+        <v-avatar color="primary" variant="tonal" size="52" rounded="lg" class="mr-4 cursor-pointer avatar-pick" @click="avatarInput.click()">
+          <v-img v-if="form.avatar" :src="form.avatar" cover />
+          <v-icon v-else size="28">mdi-robot-happy</v-icon>
+          <div class="avatar-pick-overlay">
+            <v-icon size="16" color="white">mdi-camera</v-icon>
+          </div>
         </v-avatar>
         <div>
           <div class="text-h6 font-weight-bold">
@@ -381,6 +389,7 @@ const SKILL_META = {
 const skillLabel = (name) => SKILL_META[name]?.label ?? name
 const skillIcon  = (name) => SKILL_META[name]?.icon  ?? 'mdi-puzzle-outline'
 
+const avatarInput  = ref(null)
 const formDialog   = ref(false)
 const deleteDialog = ref(false)
 const saving       = ref(false)
@@ -389,7 +398,7 @@ const improving    = ref(false)
 const editTarget   = ref(null)
 const deleteTarget = ref(null)
 
-const emptyForm = () => ({ name: '', model: 'gemini-2.5-flash', provider: 'gemini', base_url: '', system_instruction: '', enabled_skills: [] })
+const emptyForm = () => ({ name: '', avatar: '', model: 'gemini-2.5-flash', provider: 'gemini', base_url: '', system_instruction: '', enabled_skills: [] })
 const form = ref(emptyForm())
 
 watch(() => form.value.provider, (provider, prev) => {
@@ -406,6 +415,15 @@ onMounted(async () => {
   }
 })
 
+function onAvatarSelected(e) {
+  const file = e.target.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = (ev) => { form.value.avatar = ev.target.result }
+  reader.readAsDataURL(file)
+  e.target.value = ''
+}
+
 function toggleSkill(name) {
   const idx = form.value.enabled_skills.indexOf(name)
   if (idx === -1) form.value.enabled_skills.push(name)
@@ -416,7 +434,7 @@ function openCreate() { editTarget.value = null; form.value = emptyForm(); formD
 
 function openEdit(cfg) {
   editTarget.value = cfg
-  form.value = { name: cfg.name, model: cfg.model, provider: cfg.provider ?? 'gemini', base_url: cfg.base_url ?? '', system_instruction: cfg.system_instruction ?? '', enabled_skills: [...(cfg.enabled_skills ?? [])] }
+  form.value = { name: cfg.name, avatar: cfg.avatar ?? '', model: cfg.model, provider: cfg.provider ?? 'gemini', base_url: cfg.base_url ?? '', system_instruction: cfg.system_instruction ?? '', enabled_skills: [...(cfg.enabled_skills ?? [])] }
   formDialog.value = true
 }
 
@@ -455,4 +473,13 @@ async function confirmDelete() {
 <style scoped>
 .skill-chip { transition: all .15s ease; user-select: none; }
 .skill-chip:hover { transform: translateY(-1px); }
+
+.avatar-pick { position: relative; overflow: hidden; }
+.avatar-pick-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.45);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s;
+}
+.avatar-pick:hover .avatar-pick-overlay { opacity: 1; }
 </style>
