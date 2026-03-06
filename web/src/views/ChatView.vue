@@ -167,8 +167,8 @@
           </v-avatar>
 
           <!-- User -->
-          <div v-if="msg.role === 'user'" class="d-flex flex-column align-end">
-            <v-sheet color="primary" rounded="xl" class="px-4 py-3 bubble-user">
+          <div v-if="msg.role === 'user'" class="d-flex flex-column align-end bubble-user">
+            <v-sheet color="primary" rounded="xl" class="px-4 py-3 w-100" style="border-bottom-right-radius:4px">
               <p class="text-body-1 text-on-primary mb-0" style="white-space:pre-wrap;line-height:1.55">{{ msg.text }}</p>
             </v-sheet>
             <span v-if="msg.createdAt" class="text-caption text-disabled mt-1 mr-1">{{ formatTime(msg.createdAt) }}</span>
@@ -223,13 +223,16 @@
 
       </template>
 
-      <!-- Typing indicator -->
+      <!-- Thinking indicator -->
       <div v-if="store.loading" class="d-flex align-end gap-2 mb-2">
-        <v-avatar color="primary" size="28">
+        <v-avatar color="primary" size="28" class="thinking-avatar">
           <v-icon size="14">mdi-robot</v-icon>
         </v-avatar>
         <v-sheet rounded="xl" class="border px-4 py-3" style="border-bottom-left-radius:4px">
-          <div class="typing-dots"><span /><span /><span /></div>
+          <div class="d-flex align-center gap-2">
+            <div class="typing-dots"><span /><span /><span /></div>
+            <span class="text-caption text-medium-emphasis thinking-text">Pensando…</span>
+          </div>
         </v-sheet>
       </div>
 
@@ -266,20 +269,32 @@
 
       <!-- Sugestões de perguntas -->
       <v-slide-y-reverse-transition>
-        <div v-if="suggestions.length > 0 && !store.loading" class="mb-2 suggestions-row">
-          <v-chip
-            v-for="(q, idx) in suggestions"
-            :key="idx"
-            size="small"
-            variant="tonal"
-            color="primary"
-            class="suggestion-chip flex-shrink-0"
-            @click="applySuggestion(q)"
-          >{{ q }}</v-chip>
-          <v-btn icon size="x-small" variant="text" class="flex-shrink-0 ml-1" @click="suggestions = []">
-            <v-icon size="14">mdi-close</v-icon>
-            <v-tooltip activator="parent" location="top">Fechar sugestões</v-tooltip>
-          </v-btn>
+        <div v-if="(loadingSuggestions || suggestions.length > 0) && !store.loading" class="mb-2 suggestions-row">
+          <!-- Skeletons enquanto carrega -->
+          <template v-if="loadingSuggestions">
+            <v-skeleton-loader
+              v-for="n in 3" :key="n"
+              type="chip"
+              class="flex-shrink-0"
+              style="width:120px"
+            />
+          </template>
+          <!-- Chips com as sugestões -->
+          <template v-else>
+            <v-chip
+              v-for="(q, idx) in suggestions"
+              :key="idx"
+              size="small"
+              variant="tonal"
+              color="primary"
+              class="suggestion-chip flex-shrink-0"
+              @click="applySuggestion(q)"
+            >{{ q }}</v-chip>
+            <v-btn icon size="x-small" variant="text" class="flex-shrink-0 ml-1" @click="suggestions = []">
+              <v-icon size="14">mdi-close</v-icon>
+              <v-tooltip activator="parent" location="top">Fechar sugestões</v-tooltip>
+            </v-btn>
+          </template>
         </div>
       </v-slide-y-reverse-transition>
 
@@ -615,7 +630,8 @@ function onMicCancel() {
   isHoldMode = false
 }
 
-const suggestions = ref([])
+const suggestions        = ref([])
+const loadingSuggestions = ref(false)
 
 const clearDialog      = ref(false)
 const sessionDialog    = ref(false)
@@ -647,6 +663,7 @@ watch(() => store.messages.length, () => {
 watch(() => store.sessionId, () => {
   ratings.value = {}
   suggestions.value = []
+  loadingSuggestions.value = false
   window.speechSynthesis?.cancel()
   onMicCancel()
 })
@@ -831,10 +848,13 @@ function speak(text) {
 // ── Sugestões de perguntas ──────────────────────────────
 async function fetchSuggestions() {
   if (!store.sessionId) return
+  suggestions.value = []
+  loadingSuggestions.value = true
   try {
     const { data } = await suggestAPI.getQuestions(store.sessionId)
     suggestions.value = data?.questions ?? []
   } catch { /* non-critical */ }
+  finally { loadingSuggestions.value = false }
 }
 
 function applySuggestion(question) {
@@ -872,6 +892,20 @@ function applySuggestion(question) {
   0%, 80%, 100% { transform: scale(.8); opacity: .4; }
   40%           { transform: scale(1.2); opacity: 1;  }
 }
+
+/* Thinking avatar pulse */
+@keyframes thinking-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--v-theme-primary), .4); }
+  50%       { box-shadow: 0 0 0 6px rgba(var(--v-theme-primary), 0); }
+}
+.thinking-avatar { animation: thinking-pulse 1.4s ease-in-out infinite; }
+
+/* Thinking text fade */
+@keyframes thinking-fade {
+  0%, 100% { opacity: .4; }
+  50%       { opacity: 1; }
+}
+.thinking-text { animation: thinking-fade 1.4s ease-in-out infinite; }
 
 /* Mic pulse animation */
 @keyframes mic-pulse {
