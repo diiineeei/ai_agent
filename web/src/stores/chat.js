@@ -51,8 +51,14 @@ export const useChatStore = defineStore('chat', () => {
         return
       }
       messages.value = data
+        .filter((c) => {
+          // skip turns that are only function calls or tool responses
+          if (!c.parts?.length) return false
+          const hasFnOnly = c.parts.every((p) => p.function_call || p.function_response)
+          return !hasFnOnly
+        })
         .map((c) => ({
-          role: c.role,
+          role: c.role === 'model' ? 'model' : 'user',
           text: c.parts?.find((p) => p.text)?.text || '',
           createdAt: c.created_at ?? null,
         }))

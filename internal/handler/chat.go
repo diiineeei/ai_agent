@@ -5,11 +5,31 @@ import (
 	"net/http"
 
 	"ai_agent/internal/agent"
+	"ai_agent/internal/model"
 	"ai_agent/internal/repository"
 	"ai_agent/internal/skills"
 
 	"google.golang.org/genai"
 )
+
+// visibleHistory filters out function-call and tool-response turns,
+// returning only the user/model text turns that should appear in the UI.
+func visibleHistory(history []model.Content) []model.Content {
+	out := make([]model.Content, 0, len(history))
+	for _, c := range history {
+		hasText := false
+		for _, p := range c.Parts {
+			if p.Text != "" && p.FunctionCall == nil && p.FunctionResponse == nil {
+				hasText = true
+				break
+			}
+		}
+		if hasText {
+			out = append(out, c)
+		}
+	}
+	return out
+}
 
 func containsSkill(list []string, name string) bool {
 	for _, s := range list {
@@ -136,7 +156,7 @@ func (h *ChatHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "erro ao carregar histórico: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	jsonResponse(w, http.StatusOK, history)
+	jsonResponse(w, http.StatusOK, visibleHistory(history))
 }
 
 // ListSessions handles GET /sessions — returns all session summaries sorted by last activity.
