@@ -343,10 +343,12 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
 import { useSkillsStore } from '@/stores/skills'
 import { agentConfigsAPI } from '@/services/api'
 
+const route = useRoute()
 const store = useAgentConfigsStore()
 const skillsStore = useSkillsStore()
 
@@ -396,7 +398,13 @@ watch(() => form.value.provider, (provider, prev) => {
   if (provider !== 'ollama') form.value.base_url = ''
 })
 
-onMounted(() => { store.fetchAll(); skillsStore.fetchSkills() })
+onMounted(async () => {
+  await Promise.all([store.fetchAll(), skillsStore.fetchSkills()])
+  if (route.query.edit) {
+    const cfg = store.configs.find((c) => c.id === route.query.edit)
+    if (cfg) openEdit(cfg)
+  }
+})
 
 function toggleSkill(name) {
   const idx = form.value.enabled_skills.indexOf(name)

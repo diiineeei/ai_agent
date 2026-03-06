@@ -68,6 +68,39 @@
         </v-card>
       </v-menu>
       <v-btn
+        v-if="currentAgentConfig"
+        icon size="small" variant="text"
+        @click="router.push({ name: 'agents', query: { edit: currentAgentConfig.id } })"
+      >
+        <v-icon size="18">mdi-cog-outline</v-icon>
+        <v-tooltip activator="parent" location="bottom">Editar agente</v-tooltip>
+      </v-btn>
+
+      <v-menu v-if="currentAgentConfig" location="bottom end" :close-on-content-click="false">
+        <template #activator="{ props: menuProps }">
+          <v-btn icon size="small" variant="text" v-bind="menuProps">
+            <v-icon size="18">mdi-puzzle-outline</v-icon>
+            <v-tooltip activator="parent" location="bottom">Skills ativas</v-tooltip>
+          </v-btn>
+        </template>
+        <v-card min-width="240" rounded="lg">
+          <v-list density="compact" nav>
+            <v-list-subheader>Skills ativas</v-list-subheader>
+            <template v-if="currentAgentConfig.enabled_skills?.length">
+              <v-list-item
+                v-for="s in currentAgentConfig.enabled_skills"
+                :key="s"
+                :title="skillLabel(s)"
+                :prepend-icon="skillIcon(s)"
+                rounded="lg"
+              />
+            </template>
+            <v-list-item v-else title="Nenhuma skill ativa" disabled />
+          </v-list>
+        </v-card>
+      </v-menu>
+
+      <v-btn
         icon size="small" variant="text"
         :color="showTokens ? 'primary' : undefined"
         @click="showTokens = !showTokens"
@@ -508,17 +541,27 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
 import { chatAPI, filesAPI, feedbackAPI, suggestAPI } from '@/services/api'
 import { renderMarkdown } from '@/utils/markdown'
 
+const router = useRouter()
 const store = useChatStore()
 const agentConfigsStore = useAgentConfigsStore()
 
 const currentAgentConfig = computed(() =>
   agentConfigsStore.configs.find((c) => c.id === store.agentConfigId) ?? null
 )
+
+const SKILL_META = {
+  weather:           { label: 'Clima',              icon: 'mdi-weather-partly-cloudy' },
+  search_documents:  { label: 'Busca em Documentos', icon: 'mdi-text-search' },
+  suggest_questions: { label: 'Sugestões',           icon: 'mdi-help-circle-outline' },
+}
+const skillLabel = (name) => SKILL_META[name]?.label ?? name
+const skillIcon  = (name) => SKILL_META[name]?.icon  ?? 'mdi-puzzle-outline'
 
 const input        = ref('')
 const inputFocused = ref(false)
