@@ -86,7 +86,12 @@ func (h *ChatHandler) SendPrompt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a := agent.NewWithRepo(h.geminiClient, cfg.Model, cfg.SystemInstruction, h.sessionRepo)
+	var a agent.Agent
+	if cfg.Provider == "ollama" {
+		a = agent.NewOllama(cfg.BaseURL, cfg.Model, cfg.SystemInstruction, h.sessionRepo)
+	} else {
+		a = agent.NewWithRepo(h.geminiClient, cfg.Model, cfg.SystemInstruction, h.sessionRepo)
+	}
 
 	if err := h.registry.LoadByNames(ctx, a, cfg.EnabledSkills); err != nil {
 		jsonError(w, "erro ao carregar skills: "+err.Error(), http.StatusInternalServerError)
@@ -94,7 +99,9 @@ func (h *ChatHandler) SendPrompt(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Inject contextual skills that require session context at instantiation time.
-	if containsSkill(cfg.EnabledSkills, "suggest_questions") && h.registry.IsEnabled(ctx, "suggest_questions") {
+	// suggest_questions requires the Gemini client, so skip for Ollama agents.
+	if cfg.Provider != "ollama" &&
+		containsSkill(cfg.EnabledSkills, "suggest_questions") && h.registry.IsEnabled(ctx, "suggest_questions") {
 		sq := skills.NewSuggestQuestionsSkill(h.geminiClient, h.sessionRepo, *cfg, req.SessionID)
 		if err := a.AddFunctionCall(sq.Declaration()); err != nil {
 			jsonError(w, "erro ao registrar skill suggest_questions: "+err.Error(), http.StatusInternalServerError)

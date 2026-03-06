@@ -22,8 +22,14 @@ type FunctionDeclaration struct {
 	FunctionCall     FunctionCallFn
 }
 
-// Agent wraps the Gemini client and manages function calling and session persistence.
-type Agent struct {
+// Agent is the common interface for all LLM backends.
+type Agent interface {
+	Send(ctx context.Context, sessionID, prompt string) (string, TokenUsage, error)
+	AddFunctionCall(fn *FunctionDeclaration) error
+}
+
+// GeminiAgent wraps the Gemini client and manages function calling and session persistence.
+type GeminiAgent struct {
 	client            *genai.Client
 	model             string
 	systemInstruction string
@@ -31,8 +37,8 @@ type Agent struct {
 	sessionRepo       repository.SessionRepository
 }
 
-func New(client *genai.Client, model, systemInstruction string) *Agent {
-	return &Agent{
+func New(client *genai.Client, model, systemInstruction string) *GeminiAgent {
+	return &GeminiAgent{
 		client:            client,
 		model:             model,
 		systemInstruction: systemInstruction,
@@ -40,14 +46,14 @@ func New(client *genai.Client, model, systemInstruction string) *Agent {
 	}
 }
 
-func NewWithRepo(client *genai.Client, model, systemInstruction string, repo repository.SessionRepository) *Agent {
+func NewWithRepo(client *genai.Client, model, systemInstruction string, repo repository.SessionRepository) *GeminiAgent {
 	a := New(client, model, systemInstruction)
 	a.sessionRepo = repo
 	return a
 }
 
 // AddFunctionCall registers a skill with the agent.
-func (a *Agent) AddFunctionCall(fn *FunctionDeclaration) error {
+func (a *GeminiAgent) AddFunctionCall(fn *FunctionDeclaration) error {
 	if fn.Name == "" {
 		return fmt.Errorf("function declaration must have a name")
 	}
@@ -58,7 +64,7 @@ func (a *Agent) AddFunctionCall(fn *FunctionDeclaration) error {
 	return nil
 }
 
-func (a *Agent) getTools() []*genai.Tool {
+func (a *GeminiAgent) getTools() []*genai.Tool {
 	if len(a.functionsMap) == 0 {
 		return nil
 	}
@@ -101,7 +107,7 @@ func usageFromResp(resp *genai.GenerateContentResponse) TokenUsage {
 }
 
 // Send processes the user prompt, handles function calling loop, and persists the session.
-func (a *Agent) Send(ctx context.Context, sessionID, prompt string) (string, TokenUsage, error) {
+func (a *GeminiAgent) Send(ctx context.Context, sessionID, prompt string) (string, TokenUsage, error) {
 	history, err := a.loadHistory(ctx, sessionID)
 	if err != nil {
 		return "", TokenUsage{}, err
@@ -137,7 +143,7 @@ func (a *Agent) Send(ctx context.Context, sessionID, prompt string) (string, Tok
 }
 
 // processResponse handles function calls recursively until the model returns text.
-func (a *Agent) processResponse(ctx context.Context, chat *genai.Chat, resp *genai.GenerateContentResponse) (string, TokenUsage, error) {
+func (a *GeminiAgent) processResponse(ctx context.Context, chat *genai.Chat, resp *genai.GenerateContentResponse) (string, TokenUsage, error) {
 	usage := usageFromResp(resp)
 
 	calls := resp.FunctionCalls()
@@ -175,7 +181,7 @@ func (a *Agent) processResponse(ctx context.Context, chat *genai.Chat, resp *gen
 }
 
 // GetSession returns the conversation history for a session.
-func (a *Agent) GetSession(ctx context.Context, sessionID string) ([]model.Content, error) {
+func (a *GeminiAgent) GetSession(ctx context.Context, sessionID string) ([]model.Content, error) {
 	if a.sessionRepo == nil {
 		return nil, nil
 	}
@@ -183,14 +189,14 @@ func (a *Agent) GetSession(ctx context.Context, sessionID string) ([]model.Conte
 }
 
 // ClearSession deletes the session history.
-func (a *Agent) ClearSession(ctx context.Context, sessionID string) error {
+func (a *GeminiAgent) ClearSession(ctx context.Context, sessionID string) error {
 	if a.sessionRepo == nil {
 		return nil
 	}
 	return a.sessionRepo.Delete(ctx, sessionID)
 }
 
-func (a *Agent) loadHistory(ctx context.Context, sessionID string) ([]*genai.Content, error) {
+func (a *GeminiAgent) loadHistory(ctx context.Context, sessionID string) ([]*genai.Content, error) {
 	if a.sessionRepo == nil || sessionID == "" {
 		return nil, nil
 	}
@@ -201,7 +207,7 @@ func (a *Agent) loadHistory(ctx context.Context, sessionID string) ([]*genai.Con
 	return toGenAIContents(stored), nil
 }
 
-func (a *Agent) saveHistory(ctx context.Context, sessionID string, history []*genai.Content) error {
+func (a *GeminiAgent) saveHistory(ctx context.Context, sessionID string, history []*genai.Content) error {
 	if a.sessionRepo == nil || sessionID == "" {
 		return nil
 	}

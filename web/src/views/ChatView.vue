@@ -11,8 +11,15 @@
         <div class="text-subtitle-2 font-weight-bold text-truncate" style="line-height:1.2">
           {{ store.sessionName || store.agentName || 'AI Agent' }}
         </div>
-        <div class="text-caption text-medium-emphasis text-truncate" style="font-family:monospace">
-          {{ store.sessionId }}
+        <div class="d-flex align-center gap-1 flex-wrap" style="line-height:1">
+          <v-chip v-if="currentAgentConfig?.model" size="x-small" variant="tonal" color="secondary" class="mt-1">
+            <v-icon start size="10">mdi-chip</v-icon>
+            {{ currentAgentConfig.model }}
+          </v-chip>
+          <v-chip v-if="currentAgentConfig?.provider === 'ollama'" size="x-small" variant="tonal" color="orange" class="mt-1">
+            <v-icon start size="10">mdi-server-outline</v-icon>
+            Ollama
+          </v-chip>
         </div>
       </div>
 
@@ -86,15 +93,58 @@
       <!-- Empty state -->
       <div
         v-if="store.messages.length === 0 && !store.loading"
-        class="d-flex flex-column align-center justify-center text-center h-100"
+        class="d-flex flex-column align-center justify-center h-100 pa-6"
       >
-        <v-avatar color="primary" size="80" class="mb-5" style="opacity:.15">
-          <v-icon size="48">mdi-robot-happy</v-icon>
-        </v-avatar>
-        <p class="text-h6 mb-1 font-weight-regular">
-          {{ store.agentName ? `Olá! Sou ${store.agentName}` : 'Olá!' }}
-        </p>
-        <p class="text-body-2 text-medium-emphasis">Como posso ajudar você hoje?</p>
+        <!-- Agent already selected -->
+        <template v-if="store.agentConfigId">
+          <v-avatar color="primary" size="80" class="mb-5" style="opacity:.15">
+            <v-icon size="48">mdi-robot-happy</v-icon>
+          </v-avatar>
+          <p class="text-h6 mb-1 font-weight-regular">Olá! Sou {{ store.agentName }}</p>
+          <p class="text-body-2 text-medium-emphasis">Como posso ajudar você hoje?</p>
+        </template>
+
+        <!-- No agent selected: show agent picker -->
+        <template v-else>
+          <v-icon size="48" color="primary" style="opacity:.3" class="mb-4">mdi-robot-happy</v-icon>
+          <p class="text-h6 font-weight-regular mb-1">Escolha um agente para começar</p>
+          <p class="text-body-2 text-medium-emphasis mb-6">Selecione com qual assistente deseja conversar</p>
+
+          <div class="agent-picker-grid">
+            <v-card
+              v-for="cfg in agentConfigsStore.configs"
+              :key="cfg.id"
+              rounded="xl"
+              variant="outlined"
+              class="agent-pick-card cursor-pointer"
+              @click="pickAgent(cfg)"
+            >
+              <div class="pa-4 d-flex align-center gap-3">
+                <v-avatar color="primary" variant="tonal" size="44" class="flex-shrink-0">
+                  <span class="text-body-1 font-weight-bold">{{ cfg.name[0].toUpperCase() }}</span>
+                </v-avatar>
+                <div class="overflow-hidden flex-grow-1">
+                  <div class="text-body-2 font-weight-bold text-truncate">{{ cfg.name }}</div>
+                  <div class="d-flex align-center gap-1 mt-1 flex-wrap">
+                    <v-chip size="x-small" variant="tonal" color="secondary">
+                      <v-icon start size="10">mdi-chip</v-icon>
+                      {{ cfg.model }}
+                    </v-chip>
+                    <v-chip v-if="cfg.provider === 'ollama'" size="x-small" variant="tonal" color="orange">
+                      <v-icon start size="10">mdi-server-outline</v-icon>
+                      Ollama
+                    </v-chip>
+                  </div>
+                </div>
+                <v-icon size="18" color="medium-emphasis">mdi-chevron-right</v-icon>
+              </div>
+            </v-card>
+
+            <div v-if="!agentConfigsStore.configs.length" class="text-center text-medium-emphasis">
+              <p class="text-body-2">Nenhum agente cadastrado.</p>
+            </div>
+          </div>
+        </template>
       </div>
 
       <template v-for="(msg, i) in store.messages" :key="i">
@@ -190,7 +240,7 @@
     <v-divider />
 
     <!-- ── Input ──────────────────────────────────────── -->
-    <div class="pa-4" style="flex-shrink:0">
+    <div v-if="store.agentConfigId" class="pa-4" style="flex-shrink:0">
 
       <!-- Upload status -->
       <v-slide-y-reverse-transition>
@@ -430,7 +480,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
 import { chatAPI, filesAPI, feedbackAPI, suggestAPI } from '@/services/api'
@@ -438,6 +488,10 @@ import { renderMarkdown } from '@/utils/markdown'
 
 const store = useChatStore()
 const agentConfigsStore = useAgentConfigsStore()
+
+const currentAgentConfig = computed(() =>
+  agentConfigsStore.configs.find((c) => c.id === store.agentConfigId) ?? null
+)
 
 const input        = ref('')
 const inputFocused = ref(false)
@@ -500,10 +554,6 @@ const renameValue = ref('')
 
 onMounted(async () => {
   await agentConfigsStore.fetchAll()
-  if (!store.agentConfigId && agentConfigsStore.configs.length > 0) {
-    store.agentConfigId = agentConfigsStore.configs[0].id
-    store.agentName     = agentConfigsStore.configs[0].name
-  }
   selectedConfigId.value = store.agentConfigId
   scrollToBottom()
 })
@@ -615,6 +665,11 @@ function startNewSession() {
   if (cfg) store.agentName = cfg.name
   newSessionDialog.value = false
   newSessionName.value = ''
+}
+
+function pickAgent(cfg) {
+  store.newSession(cfg.id)
+  store.agentName = cfg.name
 }
 
 // ── Inline rename ──────────────────────────────────────
@@ -772,6 +827,17 @@ function applySuggestion(question) {
 
 /* Token chip */
 .token-chip { font-size: 10px !important; opacity: .7; }
+
+/* Agent picker grid */
+.agent-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 680px;
+}
+.agent-pick-card { transition: all .15s ease; }
+.agent-pick-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,.1); }
 
 /* Suggestion chips row */
 .suggestions-row {

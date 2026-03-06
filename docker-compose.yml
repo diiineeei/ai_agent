@@ -7,5 +7,14 @@ services:
     volumes:
       - mongo_data:/data/db
 
+  ollama:
+    image: ollama/ollama
+    container_name: ai_agent_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
 volumes:
   mongo_data:
+  ollama_data:

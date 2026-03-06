@@ -80,6 +80,8 @@ func (r *MongoAgentConfigRepository) Update(ctx context.Context, id string, cfg 
 		"name":               cfg.Name,
 		"system_instruction": cfg.SystemInstruction,
 		"model":              cfg.Model,
+		"provider":           cfg.Provider,
+		"base_url":           cfg.BaseURL,
 		"enabled_skills":     cfg.EnabledSkills,
 		"updated_at":         time.Now(),
 	}}

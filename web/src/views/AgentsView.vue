@@ -43,10 +43,21 @@
             </v-avatar>
             <div class="overflow-hidden flex-grow-1">
               <div class="text-body-1 font-weight-bold text-truncate">{{ cfg.name }}</div>
-              <v-chip size="x-small" variant="tonal" color="secondary" class="mt-1">
-                <v-icon start size="10">mdi-chip</v-icon>
-                {{ cfg.model }}
-              </v-chip>
+              <div class="d-flex align-center gap-1 mt-1 flex-wrap">
+                <v-chip size="x-small" variant="tonal" color="secondary">
+                  <v-icon start size="10">mdi-chip</v-icon>
+                  {{ cfg.model }}
+                </v-chip>
+                <v-chip
+                  v-if="cfg.provider === 'ollama'"
+                  size="x-small"
+                  variant="tonal"
+                  color="orange"
+                >
+                  <v-icon start size="10">mdi-server-outline</v-icon>
+                  Ollama
+                </v-chip>
+              </div>
             </div>
           </div>
 
@@ -129,9 +140,9 @@
 
       <v-card-text class="pa-5">
 
-        <!-- Name + Model row -->
+        <!-- Name row -->
         <v-row dense>
-          <v-col cols="12" sm="6">
+          <v-col cols="12">
             <v-text-field
               v-model="form.name"
               label="Nome *"
@@ -142,15 +153,47 @@
               :rules="[(v) => !!v || 'Obrigatório']"
             />
           </v-col>
-          <v-col cols="12" sm="6">
+        </v-row>
+
+        <!-- Provider + Model row -->
+        <v-row dense class="mt-2">
+          <v-col cols="12" sm="4">
+            <v-select
+              v-model="form.provider"
+              label="Provedor"
+              :items="[{ title: 'Gemini', value: 'gemini' }, { title: 'Ollama', value: 'ollama' }]"
+              variant="outlined"
+              density="comfortable"
+              prepend-inner-icon="mdi-server-outline"
+              hide-details
+            />
+          </v-col>
+          <v-col cols="12" sm="8">
             <v-combobox
               v-model="form.model"
               label="Modelo *"
               :items="modelSuggestions"
+              item-title="title"
+              item-value="title"
               variant="outlined"
               density="comfortable"
               prepend-inner-icon="mdi-chip"
               hide-details="auto"
+            />
+          </v-col>
+        </v-row>
+
+        <!-- Base URL (Ollama only) -->
+        <v-row v-if="form.provider === 'ollama'" dense class="mt-2">
+          <v-col cols="12">
+            <v-text-field
+              v-model="form.base_url"
+              label="URL do Ollama"
+              placeholder="http://localhost:11434"
+              variant="outlined"
+              density="comfortable"
+              prepend-inner-icon="mdi-link-variant"
+              hide-details
             />
           </v-col>
         </v-row>
@@ -285,7 +328,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
 import { useSkillsStore } from '@/stores/skills'
 import { agentConfigsAPI } from '@/services/api'
@@ -293,11 +336,31 @@ import { agentConfigsAPI } from '@/services/api'
 const store = useAgentConfigsStore()
 const skillsStore = useSkillsStore()
 
-const modelSuggestions = ['gemini-2.5-flash', 'gemini-2.5-pro']
+const GEMINI_MODELS = [
+  { title: 'gemini-2.5-flash', subtitle: 'Rápido e eficiente' },
+  { title: 'gemini-2.5-pro',   subtitle: 'Mais capaz' },
+]
+const OLLAMA_MODELS = [
+  { title: 'llama3.2:1b',  subtitle: '~1.3 GB · mais leve' },
+  { title: 'llama3.2:3b',  subtitle: '~2 GB' },
+  { title: 'qwen2.5:3b',   subtitle: '~2 GB' },
+  { title: 'phi4-mini',    subtitle: '~2.5 GB' },
+  { title: 'llama3.2',     subtitle: '~5 GB' },
+  { title: 'llama3.1',     subtitle: '~5 GB' },
+  { title: 'mistral',      subtitle: '~5 GB' },
+  { title: 'qwen2.5',      subtitle: '~5 GB' },
+  { title: 'phi4',         subtitle: '~9 GB' },
+  { title: 'gemma3',       subtitle: '~9 GB' },
+]
+
+const modelSuggestions = computed(() =>
+  form.value.provider === 'ollama' ? OLLAMA_MODELS : GEMINI_MODELS
+)
 
 const SKILL_META = {
-  weather:          { label: 'Clima',              icon: 'mdi-weather-partly-cloudy' },
-  search_documents: { label: 'Busca em Documentos', icon: 'mdi-text-search' },
+  weather:           { label: 'Clima',              icon: 'mdi-weather-partly-cloudy' },
+  search_documents:  { label: 'Busca em Documentos', icon: 'mdi-text-search' },
+  suggest_questions: { label: 'Sugestões',           icon: 'mdi-help-circle-outline' },
 }
 const skillLabel = (name) => SKILL_META[name]?.label ?? name
 const skillIcon  = (name) => SKILL_META[name]?.icon  ?? 'mdi-puzzle-outline'
@@ -310,8 +373,14 @@ const improving    = ref(false)
 const editTarget   = ref(null)
 const deleteTarget = ref(null)
 
-const emptyForm = () => ({ name: '', model: 'gemini-2.5-flash', system_instruction: '', enabled_skills: [] })
+const emptyForm = () => ({ name: '', model: 'gemini-2.5-flash', provider: 'gemini', base_url: '', system_instruction: '', enabled_skills: [] })
 const form = ref(emptyForm())
+
+watch(() => form.value.provider, (provider, prev) => {
+  if (provider === prev) return
+  form.value.model = provider === 'ollama' ? OLLAMA_MODELS[0].title : GEMINI_MODELS[0].title
+  if (provider !== 'ollama') form.value.base_url = ''
+})
 
 onMounted(() => { store.fetchAll(); skillsStore.fetchSkills() })
 
@@ -325,7 +394,7 @@ function openCreate() { editTarget.value = null; form.value = emptyForm(); formD
 
 function openEdit(cfg) {
   editTarget.value = cfg
-  form.value = { name: cfg.name, model: cfg.model, system_instruction: cfg.system_instruction ?? '', enabled_skills: [...(cfg.enabled_skills ?? [])] }
+  form.value = { name: cfg.name, model: cfg.model, provider: cfg.provider ?? 'gemini', base_url: cfg.base_url ?? '', system_instruction: cfg.system_instruction ?? '', enabled_skills: [...(cfg.enabled_skills ?? [])] }
   formDialog.value = true
 }
 
@@ -343,7 +412,11 @@ async function submitForm() {
   if (!form.value.name || !form.value.model) return
   saving.value = true
   try {
-    editTarget.value ? await store.update(editTarget.value.id, form.value) : await store.create(form.value)
+    const payload = {
+      ...form.value,
+      model: typeof form.value.model === 'object' ? form.value.model.title : form.value.model,
+    }
+    editTarget.value ? await store.update(editTarget.value.id, payload) : await store.create(payload)
     formDialog.value = false
   } finally { saving.value = false }
 }

@@ -76,7 +76,7 @@ func (r *SkillRegistry) Seed(ctx context.Context) error {
 
 // LoadEnabled queries MongoDB for enabled skills and registers their
 // FunctionDeclarations with the given agent. Call this once per request.
-func (r *SkillRegistry) LoadEnabled(ctx context.Context, a *agent.Agent) error {
+func (r *SkillRegistry) LoadEnabled(ctx context.Context, a agent.Agent) error {
 	enabled, err := r.skillRepo.ListEnabled(ctx)
 	if err != nil {
 		return fmt.Errorf("loading enabled skills: %w", err)
@@ -100,7 +100,7 @@ func (r *SkillRegistry) LoadEnabled(ctx context.Context, a *agent.Agent) error {
 
 // LoadByNames loads only globally-enabled skills whose names are in the provided list.
 // It acts as the intersection of globally enabled skills and the agent's configured skills.
-func (r *SkillRegistry) LoadByNames(ctx context.Context, a *agent.Agent, names []string) error {
+func (r *SkillRegistry) LoadByNames(ctx context.Context, a agent.Agent, names []string) error {
 	if len(names) == 0 {
 		return nil
 	}
