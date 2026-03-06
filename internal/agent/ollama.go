@@ -155,6 +155,14 @@ func (a *OllamaAgent) chat(ctx context.Context, messages []ollamaMessage, tools 
 	}
 
 	msg := resp.Message
+
+	// Some models embed tool calls as JSON in content instead of using the tool_calls field.
+	if len(msg.ToolCalls) == 0 {
+		if embedded := parseEmbeddedToolCall(msg.Content); embedded != nil {
+			msg.ToolCalls = []ollamaCall{*embedded}
+		}
+	}
+
 	messages = append(messages, msg)
 
 	if len(msg.ToolCalls) == 0 {
@@ -165,7 +173,12 @@ func (a *OllamaAgent) chat(ctx context.Context, messages []ollamaMessage, tools 
 	for _, tc := range msg.ToolCalls {
 		fn, ok := a.funcsMap[tc.Function.Name]
 		if !ok {
-			return "", nil, TokenUsage{}, fmt.Errorf("model requested unknown function %q", tc.Function.Name)
+			// Model hallucinated a non-existent function; instruct it to answer directly.
+			messages = append(messages, ollamaMessage{
+				Role:    "tool",
+				Content: fmt.Sprintf(`{"error":"função %q não existe, responda a pergunta do usuário diretamente sem usar ferramentas"}`, tc.Function.Name),
+			})
+			continue
 		}
 		result, err := fn.FunctionCall(ctx, tc.Function.args())
 		if err != nil {
@@ -306,6 +319,39 @@ func ollamaToModelContents(msgs []ollamaMessage) []model.Content {
 		}
 	}
 	return contents
+}
+
+// parseEmbeddedToolCall detects when a model embeds a tool call as JSON in the
+// content field instead of using the structured tool_calls field.
+// Returns nil if the content does not look like a tool call.
+func parseEmbeddedToolCall(content string) *ollamaCall {
+	content = strings.TrimSpace(content)
+	if !strings.HasPrefix(content, "{") {
+		return nil
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &m); err != nil {
+		return nil
+	}
+	nameRaw, hasName := m["name"]
+	if !hasName {
+		return nil
+	}
+	var name string
+	if err := json.Unmarshal(nameRaw, &name); err != nil || name == "" {
+		return nil
+	}
+	// Accept "parameters" or "arguments" as the args field.
+	args := m["parameters"]
+	if args == nil {
+		args = m["arguments"]
+	}
+	if args == nil {
+		args = json.RawMessage("{}")
+	}
+	return &ollamaCall{
+		Function: ollamaFunc{Name: name, Arguments: args},
+	}
 }
 
 var _ Agent = (*OllamaAgent)(nil)

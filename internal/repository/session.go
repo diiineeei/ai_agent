@@ -40,11 +40,24 @@ func NewMongoSessionRepository(coll *mongo.Collection) *MongoSessionRepository {
 
 func (r *MongoSessionRepository) Save(ctx context.Context, sessionID string, history []model.Content) error {
 	now := time.Now()
+
+	// Load existing history to preserve previously assigned timestamps.
+	var existing sessionDoc
+	_ = r.coll.FindOne(ctx, bson.M{"_id": sessionID}).Decode(&existing)
+
 	for i := range history {
-		if history[i].CreatedAt.IsZero() {
-			history[i].CreatedAt = now
+		if !history[i].CreatedAt.IsZero() {
+			continue
+		}
+		// Reuse stored timestamp for messages at the same position.
+		if i < len(existing.History) && !existing.History[i].CreatedAt.IsZero() {
+			history[i].CreatedAt = existing.History[i].CreatedAt
+		} else {
+			// Spread new messages by 1ms so ordering is preserved.
+			history[i].CreatedAt = now.Add(time.Duration(i) * time.Millisecond)
 		}
 	}
+
 	filter := bson.M{"_id": sessionID}
 	update := bson.M{"$set": bson.M{
 		"history":    history,
