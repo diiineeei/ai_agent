@@ -70,6 +70,7 @@ func main() {
 		return skills.NewSearchDocumentsSkill(fileRepo, embedder)
 	})
 	registry.RegisterSeedOnly("suggest_questions", "Sugere perguntas relevantes que o usuário pode fazer ao assistente com base no histórico da conversa e nas características do agente.")
+	registry.RegisterSeedOnly("chess", "Permite jogar xadrez contra o agente de IA diretamente no browser.")
 
 	// Seed default skills into MongoDB (idempotent)
 	if err := registry.Seed(ctx); err != nil {

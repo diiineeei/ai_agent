@@ -10,7 +10,7 @@
 
       <div class="flex-grow-1 overflow-hidden">
         <div class="text-subtitle-2 font-weight-bold text-truncate" style="line-height:1.2">
-          {{ store.sessionName || store.agentName || 'AI Agent' }}
+          {{ store.sessionName || store.agentName || 'Playground AI' }}
         </div>
         <div class="d-flex align-center gap-1 flex-wrap" style="line-height:1">
           <v-chip v-if="currentAgentConfig?.model" size="x-small" variant="tonal" color="secondary" class="mt-1">
@@ -23,6 +23,10 @@
           </v-chip>
         </div>
       </div>
+
+      <v-btn icon size="small" variant="text" color="primary" title="Nova sessão" @click="newSessionDialog = true">
+        <v-icon size="22">mdi-square-edit-outline</v-icon>
+      </v-btn>
 
       <v-menu location="bottom end" :close-on-content-click="false" min-width="260">
         <template #activator="{ props: menuProps }">
@@ -290,6 +294,15 @@
 
     </div>
 
+    <!-- ── Chess panel ──────────────────────────────────── -->
+    <ChessGame
+      v-if="chessOpen"
+      :configs="agentConfigsStore.configs"
+      :initial-agent-id="store.agentConfigId"
+      :initial-agent-name="store.agentName"
+      @close="chessOpen = false"
+    />
+
     <!-- Error -->
     <v-alert
       v-if="store.error"
@@ -382,6 +395,13 @@
           >
             <v-icon size="20">mdi-paperclip</v-icon>
             <v-tooltip activator="parent" location="top">Anexar arquivo (.txt, .pdf)</v-tooltip>
+          </v-btn>
+          <v-btn
+            icon size="small" variant="text"
+            title="Jogar xadrez"
+            @click="chessOpen = !chessOpen"
+          >
+            <v-icon size="20" :color="chessOpen ? 'primary' : undefined">mdi-chess-knight</v-icon>
           </v-btn>
           <v-btn
             v-if="speechSupported"
@@ -513,32 +533,52 @@
   </v-dialog>
 
   <!-- ── New session dialog ──────────────────────────── -->
-  <v-dialog v-model="newSessionDialog" max-width="440">
+  <v-dialog v-model="newSessionDialog" max-width="480" scrollable>
     <v-card rounded="lg">
-      <v-card-title class="pt-4">Nova sessão</v-card-title>
-      <v-card-text class="d-flex flex-column gap-3">
-        <v-select
-          v-model="selectedConfigId"
-          :items="agentConfigsStore.configs"
-          item-title="name" item-value="id"
-          label="Selecione o agente *"
-          variant="outlined" density="comfortable" hide-details
-        />
-        <v-text-field
-          v-model="newSessionName"
-          label="Nome da sessão (opcional)"
-          variant="outlined"
-          density="comfortable"
-          hide-details
-          prepend-inner-icon="mdi-tag-outline"
-          clearable
-        />
-      </v-card-text>
-      <v-card-actions>
+      <v-card-title class="pt-4 d-flex align-center">
+        Nova sessão
         <v-spacer />
-        <v-btn @click="newSessionDialog = false">Cancelar</v-btn>
-        <v-btn color="primary" :disabled="!selectedConfigId" @click="startNewSession">Iniciar</v-btn>
-      </v-card-actions>
+        <v-btn icon size="small" variant="text" @click="newSessionDialog = false">
+          <v-icon size="18">mdi-close</v-icon>
+        </v-btn>
+      </v-card-title>
+      <v-divider />
+      <v-card-text class="pa-3" style="max-height: 420px">
+        <p class="text-caption text-medium-emphasis mb-3 px-1">Escolha o agente para iniciar a conversa:</p>
+        <div class="agent-pick-grid">
+          <v-card
+            v-for="cfg in agentConfigsStore.configs"
+            :key="cfg.id"
+            rounded="xl"
+            variant="outlined"
+            class="agent-pick-card cursor-pointer"
+            @click="quickStartSession(cfg)"
+          >
+            <div class="pa-3 d-flex align-center gap-3">
+              <v-avatar color="primary" variant="tonal" size="40" class="flex-shrink-0">
+                <v-img v-if="cfg.avatar" :src="cfg.avatar" cover />
+                <span v-else class="text-body-2 font-weight-bold">{{ cfg.name[0].toUpperCase() }}</span>
+              </v-avatar>
+              <div class="overflow-hidden flex-grow-1">
+                <div class="text-body-2 font-weight-bold text-truncate">{{ cfg.name }}</div>
+                <div class="d-flex align-center gap-1 mt-1 flex-wrap">
+                  <v-chip size="x-small" variant="tonal" color="secondary">
+                    <v-icon start size="10">mdi-chip</v-icon>{{ cfg.model }}
+                  </v-chip>
+                  <v-chip v-if="cfg.provider === 'ollama'" size="x-small" variant="tonal" color="orange">
+                    <v-icon start size="10">mdi-server-outline</v-icon>Ollama
+                  </v-chip>
+                </div>
+              </div>
+              <v-icon size="16" color="medium-emphasis">mdi-chevron-right</v-icon>
+            </div>
+          </v-card>
+          <div v-if="!agentConfigsStore.configs.length" class="text-center text-medium-emphasis py-6">
+            <v-icon size="36" style="opacity:.2">mdi-robot-outline</v-icon>
+            <p class="text-body-2 mt-2">Nenhum agente cadastrado.</p>
+          </div>
+        </div>
+      </v-card-text>
     </v-card>
   </v-dialog>
 
@@ -569,6 +609,7 @@
     </v-card>
   </v-dialog>
 
+
   <!-- ── Clear confirm dialog ────────────────────────── -->
   <v-dialog v-model="clearDialog" max-width="380">
     <v-card rounded="lg">
@@ -590,6 +631,7 @@ import { useChatStore } from '@/stores/chat'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
 import { chatAPI, filesAPI, feedbackAPI, suggestAPI } from '@/services/api'
 import { renderMarkdown } from '@/utils/markdown'
+import ChessGame from '@/components/ChessGame.vue'
 
 const router = useRouter()
 const store = useChatStore()
@@ -603,9 +645,12 @@ const SKILL_META = {
   weather:           { label: 'Clima',              icon: 'mdi-weather-partly-cloudy' },
   search_documents:  { label: 'Busca em Documentos', icon: 'mdi-text-search' },
   suggest_questions: { label: 'Sugestões',           icon: 'mdi-help-circle-outline' },
+  chess:             { label: 'Xadrez',              icon: 'mdi-chess-knight' },
 }
 const skillLabel = (name) => SKILL_META[name]?.label ?? name
 const skillIcon  = (name) => SKILL_META[name]?.icon  ?? 'mdi-puzzle-outline'
+
+const chessOpen    = ref(false)
 
 const input        = ref('')
 const inputFocused = ref(false)
@@ -886,6 +931,12 @@ function startNewSession() {
   newSessionName.value = ''
 }
 
+function quickStartSession(cfg) {
+  store.newSession(cfg.id)
+  store.agentName = cfg.name
+  newSessionDialog.value = false
+}
+
 function pickAgent(cfg) {
   store.newSession(cfg.id)
   store.agentName = cfg.name
@@ -1039,7 +1090,7 @@ function applySuggestion(question) {
 /* Token chip */
 .token-chip { font-size: 10px !important; opacity: .7; }
 
-/* Agent picker grid */
+/* Agent picker grid (empty state) */
 .agent-picker-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -1047,6 +1098,14 @@ function applySuggestion(question) {
   width: 100%;
   max-width: 680px;
 }
+
+/* Agent pick grid (new session dialog) */
+.agent-pick-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .agent-pick-card { transition: all .15s ease; }
 .agent-pick-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,.1); }
 

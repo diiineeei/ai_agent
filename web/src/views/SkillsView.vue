@@ -73,16 +73,18 @@
             <p class="text-body-2 text-medium-emphasis mb-3">
               {{ skill.description }}
             </p>
-            <v-chip
-              size="small"
-              :color="skill.enabled ? 'success' : 'default'"
-              variant="tonal"
-            >
-              <v-icon start size="13">
-                {{ skill.enabled ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline' }}
-              </v-icon>
-              {{ skill.enabled ? 'Ativa' : 'Inativa' }}
-            </v-chip>
+            <div class="d-flex align-center gap-2 flex-wrap">
+              <v-chip
+                size="small"
+                :color="skill.enabled ? 'success' : 'default'"
+                variant="tonal"
+              >
+                <v-icon start size="13">
+                  {{ skill.enabled ? 'mdi-check-circle-outline' : 'mdi-close-circle-outline' }}
+                </v-icon>
+                {{ skill.enabled ? 'Ativa' : 'Inativa' }}
+              </v-chip>
+            </div>
           </v-card-text>
         </v-card>
       </v-col>
@@ -136,6 +138,7 @@ const SKILL_META = {
   weather:           { label: 'Clima',              icon: 'mdi-weather-partly-cloudy' },
   search_documents:  { label: 'Busca em Documentos', icon: 'mdi-text-search' },
   suggest_questions: { label: 'Sugestões',           icon: 'mdi-help-circle-outline' },
+  chess:             { label: 'Xadrez',              icon: 'mdi-chess-knight' },
 }
 
 const skillLabel = (name) => SKILL_META[name]?.label ?? name
