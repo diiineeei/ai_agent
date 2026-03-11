@@ -297,10 +297,14 @@
     <!-- ── Chess panel ──────────────────────────────────── -->
     <ChessGame
       v-if="chessOpen"
+      ref="chessRef"
       :configs="agentConfigsStore.configs"
       :initial-agent-id="store.agentConfigId"
       :initial-agent-name="store.agentName"
       @close="chessOpen = false"
+      @ai-move="onChessAiMove"
+      @game-start="onChessGameStart"
+      @game-end="onChessGameEnd"
     />
 
     <!-- Error -->
@@ -363,6 +367,15 @@
         </div>
       </v-slide-y-reverse-transition>
 
+      <!-- Chess mode badge -->
+      <v-slide-y-reverse-transition>
+        <div v-if="chessOpen && chessRef?.agentId" class="mb-2 d-flex align-center gap-1">
+          <v-chip size="small" color="primary" variant="tonal" prepend-icon="mdi-chess-knight">
+            Conversando sobre o jogo
+          </v-chip>
+        </div>
+      </v-slide-y-reverse-transition>
+
       <!-- Input card -->
       <input ref="fileInput" type="file" accept=".txt,.pdf" style="display:none" @change="onFileSelected" />
       <v-card
@@ -373,7 +386,7 @@
       >
         <v-textarea
           v-model="input"
-          :placeholder="listening ? 'Ouvindo…' : 'Digite sua mensagem…'"
+          :placeholder="listening ? 'Ouvindo…' : (chessOpen && chessRef?.agentId ? 'Pergunte sobre o jogo…' : 'Digite sua mensagem…')"
           variant="plain"
           rows="1"
           auto-grow
@@ -651,6 +664,7 @@ const skillLabel = (name) => SKILL_META[name]?.label ?? name
 const skillIcon  = (name) => SKILL_META[name]?.icon  ?? 'mdi-puzzle-outline'
 
 const chessOpen    = ref(false)
+const chessRef     = ref(null)
 
 const input        = ref('')
 const inputFocused = ref(false)
@@ -835,7 +849,88 @@ async function sendMessage() {
   const text = input.value.trim()
   if (!text || store.loading) return
   input.value = ''
+
+  // Se o xadrez está aberto e com agente selecionado, roteia para a sessão de xadrez
+  if (chessOpen.value && chessRef.value?.agentId) {
+    const chess = chessRef.value
+    const gameCtx = chess.moves?.length
+      ? `[Xadrez | FEN: ${chess.currentFEN} | Lances: ${chess.moves.join(' ')}] `
+      : '[Xadrez - nova partida] '
+    store.messages.push({ role: 'user', text, createdAt: new Date().toISOString() })
+    store.loading = true
+    try {
+      const { data } = await chatAPI.sendPrompt(chess.chessSessionId, gameCtx + text, chess.agentId, [])
+      store.messages.push({ role: 'model', text: data.response, tokenUsage: data.token_usage ?? null, createdAt: new Date().toISOString() })
+    } catch (e) {
+      store.messages.pop()
+      store.error = e.response?.data?.error || e.message
+    } finally {
+      store.loading = false
+    }
+    return
+  }
+
   await store.send(text)
+}
+
+function onChessAiMove({ move, analysis }) {
+  if (!analysis) return
+  store.messages.push({
+    role: 'model',
+    text: `♟ ${move} — ${analysis}`,
+    createdAt: new Date().toISOString(),
+  })
+}
+
+async function onChessGameStart({ agentId, agentColor, playerColor }) {
+  if (!chessRef.value) return
+  const chess = chessRef.value
+  const agentSide  = agentColor  === 'black' ? 'pretas' : 'brancas'
+  const playerSide = playerColor === 'white'  ? 'brancas' : 'pretas'
+  store.loading = true
+  try {
+    const { data } = await chatAPI.sendPrompt(
+      chess.chessSessionId,
+      `[Xadrez] Nova partida iniciada. Você joga com as ${agentSide} e o jogador humano joga com as ${playerSide} (ele move primeiro). Apresente-se brevemente, confirme qual cor é a sua e deseje boa sorte ao jogador.`,
+      agentId,
+      [],
+    )
+    store.messages.push({ role: 'model', text: data.response, createdAt: new Date().toISOString() })
+  } catch { /* silencia */ } finally {
+    store.loading = false
+  }
+}
+
+async function onChessGameEnd({ status, moves, fen }) {
+  if (!chessRef.value) return
+  const chess = chessRef.value
+  const statusMsg = {
+    checkmate_white: 'Xeque-mate — brancas venceram',
+    checkmate_black: 'Xeque-mate — pretas venceram',
+    stalemate: 'Afogamento — empate',
+    draw: 'Empate aceito pelo jogador',
+    checkmate_black_resign: 'Jogador desistiu',
+  }[status] ?? 'Fim de jogo'
+
+  const playedMoves = moves?.length ? moves : []
+  const moveList = playedMoves.length ? playedMoves.join(' ') : 'nenhum lance foi realizado'
+
+  const analysisInstruction = playedMoves.length >= 4
+    ? `Comente brevemente o resultado e destaque no máximo duas jogadas interessantes dentre as seguintes (e APENAS essas): ${moveList}.`
+    : `Comente brevemente o resultado. Não analise jogadas pois a partida foi muito curta (${playedMoves.length} lance(s)).`
+
+  store.loading = true
+  try {
+    const { data } = await chatAPI.sendPrompt(
+      chess.chessSessionId,
+      `[Xadrez] Fim de partida. Resultado: ${statusMsg}. Lances jogados: ${moveList}. FEN final: ${fen}. ${analysisInstruction} Sugira ao jogador uma nova partida.`,
+      chess.agentId,
+      [],
+    )
+    store.messages.push({ role: 'model', text: data.response, createdAt: new Date().toISOString() })
+  } catch { /* silencia */ } finally {
+    store.loading = false
+  }
 }
 
 async function loadHistory() {

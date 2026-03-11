@@ -302,14 +302,18 @@ func buildChessPrompt(moves []string, fen string, legalMoves []string) string {
 		return fmt.Sprintf(
 			"[Xadrez] Nova partida. Você joga com as PRETAS. Minha abertura: %s. FEN: %s. "+
 				"Seus lances válidos: %s. "+
-				"Escolha UM lance e responda com \"LANCE: [lance]\" (ex: LANCE: e7e5). Uma frase de análise.",
+				"Escolha UM lance e responda com \"LANCE: [lance]\" (ex: LANCE: e7e5). "+
+				"Em seguida, escreva UMA frase de análise. "+
+				"Se a posição for muito desfavorável para as brancas, você pode sugerir que o jogador proponha empate ou desista.",
 			humanMove, fen, legal,
 		)
 	}
 	return fmt.Sprintf(
 		"[Xadrez] Você joga com as PRETAS. Histórico: %s. Minha jogada: %s. FEN: %s. "+
 			"Seus lances válidos: %s. "+
-			"Escolha UM lance e responda com \"LANCE: [lance]\" (ex: LANCE: e7e5). Uma frase de análise.",
+			"Escolha UM lance e responda com \"LANCE: [lance]\" (ex: LANCE: e7e5). "+
+			"Em seguida, escreva UMA frase de análise. "+
+			"Se a posição for muito desfavorável para as brancas, você pode sugerir que o jogador proponha empate ou desista.",
 		history, humanMove, fen, legal,
 	)
 }

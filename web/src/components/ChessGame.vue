@@ -82,7 +82,7 @@
             </div>
           </div>
 
-          <!-- Sidebar: histórico + comentário + ações -->
+          <!-- Sidebar: histórico + ações -->
           <div class="chess-sidebar">
 
             <!-- Indicador de turno -->
@@ -107,8 +107,6 @@
             <v-alert v-if="error" type="error" variant="tonal" density="compact" rounded="lg" class="mt-2 text-caption" closable @click:close="error = null">
               {{ error }}
             </v-alert>
-
-            <v-spacer />
 
             <!-- Ações -->
             <div class="d-flex gap-1 mt-2 flex-wrap">
@@ -159,7 +157,7 @@ const props = defineProps({
   initialAgentId:   { type: String, default: null },
   initialAgentName: { type: String, default: null },
 })
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'ai-move', 'game-start', 'game-end'])
 
 const chessSessionId = ref('chess-' + Math.random().toString(36).substring(2, 10))
 
@@ -192,6 +190,7 @@ const agentId            = ref(props.initialAgentId ?? null)
 const agentName          = ref(props.initialAgentName ?? null)
 const promoDialog        = ref(false)
 const promoData          = ref(null)      // { fromSq, toSq, options }
+const currentFEN         = ref('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
 
 const isGameOver = computed(() =>
   ['checkmate_white','checkmate_black','stalemate','draw'].includes(gameStatus.value)
@@ -244,11 +243,13 @@ async function startGame(cfg) {
   gameStatus.value     = 'idle'
   aiThinking.value     = false
   error.value          = null
+  currentFEN.value     = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
 
   try {
     const { data } = await chessAPI.start(chessSessionId.value, cfg.id)
     backendLegalMoves.value = data.legal_moves || []
     gameStatus.value        = 'playing'
+    emit('game-start', { agentId: cfg.id, agentName: cfg.name, agentColor: 'black', playerColor: 'white' })
   } catch (e) {
     error.value = 'Erro ao iniciar partida: ' + (e.response?.data?.error || e.message)
   }
@@ -328,14 +329,21 @@ async function sendMove(uci) {
     board.value             = fenToBoard(data.fen)
     moves.value             = data.moves
     backendLegalMoves.value = data.legal_moves || []
+    currentFEN.value        = data.fen
 
     if (data.ai_move) {
       const m = data.ai_move
       lastMove.value = [8 - parseInt(m[1]), FILES.indexOf(m[0]), 8 - parseInt(m[3]), FILES.indexOf(m[2])]
+      emit('ai-move', { move: data.ai_move, analysis: data.analysis || '' })
     }
 
-    gameStatus.value = mapStatus(data.status)
+    const newStatus = mapStatus(data.status)
+    gameStatus.value = newStatus
     turn.value       = 'w'
+
+    if (newStatus !== 'playing') {
+      emit('game-end', { status: newStatus, moves: data.moves, fen: data.fen })
+    }
   } catch (e) {
     error.value = e.response?.data?.error || e.message
     // Ressincroniza com o backend para desfazer o estado otimista
@@ -387,13 +395,22 @@ function mapStatus(s) {
 // ── Resign / Draw ─────────────────────────────────────────
 function resign() {
   gameStatus.value = 'checkmate_black'
+  emit('game-end', { status: 'checkmate_black', moves: moves.value, fen: currentFEN.value })
   chessAPI.reset(chessSessionId.value).catch(() => {})
 }
 
 function offerDraw() {
   gameStatus.value = 'draw'
+  emit('game-end', { status: 'draw', moves: moves.value, fen: currentFEN.value })
   chessAPI.reset(chessSessionId.value).catch(() => {})
 }
+
+defineExpose({
+  get chessSessionId() { return chessSessionId.value },
+  get agentId()        { return agentId.value },
+  get currentFEN()     { return currentFEN.value },
+  get moves()          { return moves.value },
+})
 </script>
 
 <style scoped>
@@ -512,15 +529,6 @@ function offerDraw() {
 .move-number { color: rgba(var(--v-theme-on-surface), 0.4); margin-right: 3px; }
 .move-entry { margin-right: 6px; }
 .move-last { font-weight: 600; color: rgb(var(--v-theme-primary)); }
-
-.ai-comment {
-  display: flex;
-  align-items: flex-start;
-  background: rgba(var(--v-theme-primary), 0.06);
-  border-radius: 6px;
-  padding: 6px 8px;
-  line-height: 1.4;
-}
 
 /* ── Agent picker ────────────────────────────────────── */
 .agent-list { display: flex; flex-direction: column; gap: 6px; }
