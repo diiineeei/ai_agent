@@ -48,6 +48,7 @@ func main() {
 	skillRepo := repository.NewMongoSkillRepository(db.Collection("skills"))
 	agentConfigRepo := repository.NewMongoAgentConfigRepository(db.Collection("agent_configs"))
 	feedbackRepo := repository.NewMongoFeedbackRepository(db.Collection("feedback"))
+	chessRepo := repository.NewMongoChessRepository(db.Collection("chess_games"))
 
 	// Embedder
 	embedder := agent.NewEmbedder()
@@ -101,6 +102,7 @@ func main() {
 	agentConfigHandler := handler.NewAgentConfigHandler(agentConfigRepo, geminiClient)
 	feedbackHandler := handler.NewFeedbackHandler(feedbackRepo)
 	suggestHandler := handler.NewSuggestHandler(geminiClient, sessionRepo, agentConfigRepo)
+	chessHandler := handler.NewChessHandler(geminiClient, chessRepo, agentConfigRepo, sessionRepo)
 
 	// Routes (Go 1.22+ ServeMux with method+pattern)
 	mux := http.NewServeMux()
@@ -118,6 +120,10 @@ func main() {
 	mux.HandleFunc("GET /feedback", feedbackHandler.ForSession)
 	mux.HandleFunc("GET /feedback/stats", feedbackHandler.Stats)
 	mux.HandleFunc("GET /suggest-questions", suggestHandler.Suggest)
+	mux.HandleFunc("POST /chess/start", chessHandler.Start)
+	mux.HandleFunc("POST /chess/move", chessHandler.Move)
+	mux.HandleFunc("GET /chess/state", chessHandler.State)
+	mux.HandleFunc("DELETE /chess/game", chessHandler.Reset)
 	mux.HandleFunc("GET /agent-configs", agentConfigHandler.List)
 	mux.HandleFunc("POST /agent-configs", agentConfigHandler.Create)
 	mux.HandleFunc("POST /agent-configs/improve-instruction", agentConfigHandler.ImproveInstruction)

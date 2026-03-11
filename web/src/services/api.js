@@ -2,10 +2,22 @@ import axios from 'axios'
 
 const http = axios.create({ baseURL: '/api' })
 
+export const chessAPI = {
+  start: (sessionId, agentConfigId) =>
+    http.post('/chess/start', { session_id: sessionId, agent_config_id: agentConfigId }),
+  move: (sessionId, move) =>
+    http.post('/chess/move', { session_id: sessionId, move }),
+  state: (sessionId) =>
+    http.get('/chess/state', { params: { session_id: sessionId } }),
+  reset: (sessionId) =>
+    http.delete('/chess/game', { params: { session_id: sessionId } }),
+}
+
 export const chatAPI = {
-  sendPrompt: (sessionId, prompt, agentConfigId = null) => {
+  sendPrompt: (sessionId, prompt, agentConfigId = null, skillsOverride = undefined) => {
     const body = { session_id: sessionId, prompt }
     if (agentConfigId) body.agent_config_id = agentConfigId
+    if (skillsOverride !== undefined) body.skills_override = skillsOverride
     return http.post('/prompt', body)
   },
   getHistory: (sessionId) =>

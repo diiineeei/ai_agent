@@ -1,8 +1,9 @@
 module ai_agent
 
-go 1.25
+go 1.25.0
 
 require (
+	github.com/corentings/chess/v2 v2.3.7-0.20260306173715-0ce24c14120e
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	go.mongodb.org/mongo-driver/v2 v2.5.0
 	google.golang.org/genai v1.49.0
@@ -24,8 +25,9 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1 // indirect

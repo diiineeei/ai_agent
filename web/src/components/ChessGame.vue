@@ -141,7 +141,7 @@
         <v-card-text>
           <div class="d-flex justify-center gap-4">
             <span v-for="p in ['Q','R','B','N']" :key="p" class="promo-piece" @click="confirmPromotion(p)">
-              {{ PIECES[turnColor + p] }}
+              {{ PIECES['w' + p] }}
             </span>
           </div>
         </v-card-text>
@@ -152,7 +152,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useChatStore } from '@/stores/chat'
+import { chessAPI } from '@/services/api'
 
 const props = defineProps({
   configs:          { type: Array,  default: () => [] },
@@ -161,9 +161,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['close'])
 
-const chatStore = useChatStore()
+const chessSessionId = ref('chess-' + Math.random().toString(36).substring(2, 10))
 
-// ── Constants ──────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────
 const FILES = ['a','b','c','d','e','f','g','h']
 
 const PIECES = {
@@ -171,496 +171,228 @@ const PIECES = {
   'bK': '♚', 'bQ': '♛', 'bR': '♜', 'bB': '♝', 'bN': '♞', 'bP': '♟',
 }
 
-const INIT_BOARD = () => [
-  ['bR','bN','bB','bQ','bK','bB','bN','bR'],
-  ['bP','bP','bP','bP','bP','bP','bP','bP'],
-  [null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null],
-  ['wP','wP','wP','wP','wP','wP','wP','wP'],
-  ['wR','wN','wB','wQ','wK','wB','wN','wR'],
-]
+const PIECE_MAP = {
+  'P':'wP','N':'wN','B':'wB','R':'wR','Q':'wQ','K':'wK',
+  'p':'bP','n':'bN','b':'bB','r':'bR','q':'bQ','k':'bK',
+}
 
-// ── State ──────────────────────────────────────────────────
-const board       = ref(INIT_BOARD())
-const turn        = ref('w')          // 'w' or 'b'
-const selected    = ref(null)         // [row, col]
-const validMoves  = ref([])           // [{r,c}]
-const lastMove    = ref(null)         // [fr,fc,tr,tc]
-const moves       = ref([])           // move history in algebraic notation
-const gameStatus  = ref('idle')       // 'idle' | 'playing' | 'check' | 'checkmate' | 'stalemate' | 'draw'
-const aiThinking  = ref(false)
-const drawLoading = ref(false)
-const error       = ref(null)
-const agentId     = ref(props.initialAgentId ?? null)
-const agentName   = ref(props.initialAgentName ?? null)
-const promoDialog = ref(false)
-const promoData   = ref(null)         // {fr,fc,tr,tc} pending promotion
+// ── State ─────────────────────────────────────────────────
+const board              = ref(fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'))
+const turn               = ref('w')
+const selected           = ref(null)      // [row, col]
+const validMoves         = ref([])        // [{r,c}] computed from backendLegalMoves
+const backendLegalMoves  = ref([])        // ["e2e4", ...] from server
+const lastMove           = ref(null)      // [fr,fc,tr,tc]
+const moves              = ref([])
+const gameStatus         = ref('idle')
+const aiThinking         = ref(false)
+const drawLoading        = ref(false)
+const error              = ref(null)
+const agentId            = ref(props.initialAgentId ?? null)
+const agentName          = ref(props.initialAgentName ?? null)
+const promoDialog        = ref(false)
+const promoData          = ref(null)      // { fromSq, toSq, options }
 
-// Castling rights: [wK, wQ, bK, bQ] (can still castle each side)
-const castleRights = ref({ wK: true, wQ: true, bK: true, bQ: true })
-// En passant target square [r,c] or null
-const enPassant = ref(null)
-
-const turnColor = computed(() => turn.value === 'w' ? 'w' : 'b')
+const isGameOver = computed(() =>
+  ['checkmate_white','checkmate_black','stalemate','draw'].includes(gameStatus.value)
+)
 
 const statusLabel = computed(() => ({
-  playing: 'Em jogo',
-  check: 'Xeque!',
-  checkmate: turn.value === 'w' ? 'Xeque-mate! Pretas vencem' : 'Xeque-mate! Brancas vencem',
-  stalemate: 'Afogamento — Empate',
-  draw: 'Empate',
+  playing:          'Em jogo',
+  checkmate_white:  'Xeque-mate! Brancas vencem',
+  checkmate_black:  'Xeque-mate! Pretas vencem',
+  stalemate:        'Afogamento — Empate',
+  draw:             'Empate',
 })[gameStatus.value] ?? '')
 
 const statusColor = computed(() => ({
-  check: 'warning',
-  checkmate: 'error',
-  stalemate: 'info',
-  draw: 'info',
+  checkmate_white: 'success',
+  checkmate_black: 'error',
+  stalemate:       'info',
+  draw:            'info',
 })[gameStatus.value] ?? 'success')
 
-// Se já há agente na prop, inicia o jogo ao montar
-onMounted(() => {
-  if (agentId.value) resetGame()
-})
+onMounted(() => { if (agentId.value) startGame({ id: agentId.value, name: agentName.value }) })
 
-// ── Game management ────────────────────────────────────────
-function startGame(cfg) {
-  agentId.value   = cfg.id
-  agentName.value = cfg.name
-  resetGame()
-}
-
-function resetGame() {
-  board.value        = INIT_BOARD()
-  turn.value         = 'w'
-  selected.value     = null
-  validMoves.value   = []
-  lastMove.value     = null
-  moves.value        = []
-  gameStatus.value   = agentId.value ? 'playing' : 'idle'
-  aiThinking.value   = false
-  error.value        = null
-  castleRights.value = { wK: true, wQ: true, bK: true, bQ: true }
-  enPassant.value    = null
-}
-
-// ── Board helpers ──────────────────────────────────────────
-function inBounds(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8 }
-
-function pieceAt(r, c, b = board.value) {
-  if (!inBounds(r, c)) return null
-  return b[r][c]
-}
-
-function colorOf(piece) { return piece ? piece[0] : null }
-
-function isValidTarget(r, c) {
-  return validMoves.value.some(m => m.r === r && m.c === c)
-}
-
-function findKing(color, b = board.value) {
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++)
-      if (b[r][c] === color + 'K') return [r, c]
-  return null
-}
-
-function cloneBoard(b) { return b.map(row => [...row]) }
-
-function applyMove(b, fr, fc, tr, tc, promo = null) {
-  const nb = cloneBoard(b)
-  const piece = nb[fr][fc]
-  nb[tr][tc] = promo ? (piece[0] + promo) : piece
-  nb[fr][fc] = null
-  // En passant capture
-  if (piece[1] === 'P' && fc !== tc && !nb[tr][tc - (tc - fc)]) {
-    // This shouldn't occur since we already set nb[tr][tc], handle separately
-  }
-  return nb
-}
-
-function isSquareAttacked(r, c, byColor, b = board.value) {
-  const opp = byColor
-  for (let sr = 0; sr < 8; sr++) {
-    for (let sc = 0; sc < 8; sc++) {
-      const p = b[sr][sc]
-      if (!p || p[0] !== opp) continue
-      const raw = rawMoves(sr, sc, b, null)
-      if (raw.some(m => m.r === r && m.c === c)) return true
+// ── FEN ───────────────────────────────────────────────────
+function fenToBoard(fen) {
+  return fen.split(' ')[0].split('/').map(row => {
+    const cells = []
+    for (const ch of row) {
+      if (/\d/.test(ch)) for (let i = 0; i < +ch; i++) cells.push(null)
+      else cells.push(PIECE_MAP[ch] ?? null)
     }
-  }
-  return false
-}
-
-function isInCheck(color, b = board.value) {
-  const king = findKing(color, b)
-  if (!king) return false
-  return isSquareAttacked(king[0], king[1], color === 'w' ? 'b' : 'w', b)
-}
-
-// ── Move generation ────────────────────────────────────────
-// rawMoves: moves without check validation (used for attack detection)
-function rawMoves(r, c, b, ep) {
-  const piece = b[r][c]
-  if (!piece) return []
-  const color = piece[0]
-  const type  = piece[1]
-  const moves = []
-
-  const add = (tr, tc) => {
-    if (inBounds(tr, tc) && colorOf(b[tr][tc]) !== color)
-      moves.push({ r: tr, c: tc })
-  }
-  const slide = (dr, dc) => {
-    let tr = r + dr, tc = c + dc
-    while (inBounds(tr, tc)) {
-      if (b[tr][tc]) { add(tr, tc); break }
-      moves.push({ r: tr, c: tc })
-      tr += dr; tc += dc
-    }
-  }
-
-  if (type === 'P') {
-    const dir = color === 'w' ? -1 : 1
-    const startRow = color === 'w' ? 6 : 1
-    // Forward
-    if (inBounds(r + dir, c) && !b[r + dir][c]) {
-      moves.push({ r: r + dir, c })
-      if (r === startRow && !b[r + 2 * dir][c])
-        moves.push({ r: r + 2 * dir, c })
-    }
-    // Captures
-    for (const dc of [-1, 1]) {
-      const tr = r + dir, tc = c + dc
-      if (inBounds(tr, tc) && b[tr][tc] && colorOf(b[tr][tc]) !== color)
-        moves.push({ r: tr, c: tc })
-      // En passant
-      if (ep && ep[0] === tr && ep[1] === tc)
-        moves.push({ r: tr, c: tc })
-    }
-  } else if (type === 'N') {
-    for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]])
-      add(r + dr, c + dc)
-  } else if (type === 'B') {
-    for (const [dr, dc] of [[-1,-1],[-1,1],[1,-1],[1,1]]) slide(dr, dc)
-  } else if (type === 'R') {
-    for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) slide(dr, dc)
-  } else if (type === 'Q') {
-    for (const [dr, dc] of [[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]]) slide(dr, dc)
-  } else if (type === 'K') {
-    for (const [dr, dc] of [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]])
-      add(r + dr, c + dc)
-  }
-  return moves
-}
-
-// legalMoves: filter rawMoves by check constraint, add castling
-function legalMoves(r, c) {
-  const piece = board.value[r][c]
-  if (!piece) return []
-  const color = piece[0]
-  const raw = rawMoves(r, c, board.value, enPassant.value)
-  const legal = raw.filter(({ r: tr, c: tc }) => {
-    const nb = cloneBoard(board.value)
-    // En passant capture
-    if (piece[1] === 'P' && tc !== c && !nb[tr][tc]) {
-      nb[r][tc] = null // captured pawn
-    }
-    nb[tr][tc] = nb[r][c]
-    nb[r][c] = null
-    return !isInCheck(color, nb)
+    return cells
   })
-
-  // Castling
-  if (piece[1] === 'K' && !isInCheck(color)) {
-    const row = color === 'w' ? 7 : 0
-    if (r === row && c === 4) {
-      // Kingside
-      if (castleRights.value[color + 'K'] &&
-          !board.value[row][5] && !board.value[row][6] &&
-          !isSquareAttacked(row, 5, color === 'w' ? 'b' : 'w') &&
-          !isSquareAttacked(row, 6, color === 'w' ? 'b' : 'w')) {
-        legal.push({ r: row, c: 6, castle: 'K' })
-      }
-      // Queenside
-      if (castleRights.value[color + 'Q'] &&
-          !board.value[row][3] && !board.value[row][2] && !board.value[row][1] &&
-          !isSquareAttacked(row, 3, color === 'w' ? 'b' : 'w') &&
-          !isSquareAttacked(row, 2, color === 'w' ? 'b' : 'w')) {
-        legal.push({ r: row, c: 2, castle: 'Q' })
-      }
-    }
-  }
-  return legal
 }
 
-// ── User interaction ───────────────────────────────────────
-function onCellClick(r, c) {
-  if (turn.value !== 'w' || aiThinking.value || gameStatus.value === 'checkmate' || gameStatus.value === 'stalemate') return
+function squareName(r, c) { return FILES[c] + (8 - r) }
+function colorOf(piece)   { return piece ? piece[0] : null }
+function isValidTarget(r, c) { return validMoves.value.some(m => m.r === r && m.c === c) }
 
+// ── Game management ───────────────────────────────────────
+async function startGame(cfg) {
+  agentId.value        = cfg.id
+  agentName.value      = cfg.name
+  chessSessionId.value = 'chess-' + Math.random().toString(36).substring(2, 10)
+  board.value          = fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+  turn.value           = 'w'
+  selected.value       = null
+  validMoves.value     = []
+  lastMove.value       = null
+  moves.value          = []
+  gameStatus.value     = 'idle'
+  aiThinking.value     = false
+  error.value          = null
+
+  try {
+    const { data } = await chessAPI.start(chessSessionId.value, cfg.id)
+    backendLegalMoves.value = data.legal_moves || []
+    gameStatus.value        = 'playing'
+  } catch (e) {
+    error.value = 'Erro ao iniciar partida: ' + (e.response?.data?.error || e.message)
+  }
+}
+
+async function resetGame() {
+  if (agentId.value) await startGame({ id: agentId.value, name: agentName.value })
+}
+
+// ── User interaction ──────────────────────────────────────
+function onCellClick(r, c) {
+  if (turn.value !== 'w' || aiThinking.value || isGameOver.value) return
+
+  const sq    = squareName(r, c)
   const cell  = board.value[r][c]
   const color = colorOf(cell)
 
-  // If a piece is already selected
   if (selected.value) {
     const [sr, sc] = selected.value
-    const move = validMoves.value.find(m => m.r === r && m.c === c)
+    const fromSq   = squareName(sr, sc)
+    const move     = validMoves.value.find(m => m.r === r && m.c === c)
 
     if (move) {
-      // Pawn promotion check
-      const piece = board.value[sr][sc]
-      if (piece === 'wP' && r === 0) {
-        promoData.value = { fr: sr, fc: sc, tr: r, tc: c, move }
+      const promoOptions = backendLegalMoves.value.filter(m => m.startsWith(fromSq + sq) && m.length === 5)
+      if (promoOptions.length > 0) {
+        // Promoção: mostrar diálogo
+        promoData.value  = { fromSq, toSq: sq, options: promoOptions }
         promoDialog.value = true
         return
       }
-      executeMove(sr, sc, r, c, null, move)
+      sendMove(fromSq + sq)
       return
     }
-
-    // Clicked another friendly piece → reselect
-    if (color === 'w') {
-      selected.value  = [r, c]
-      validMoves.value = legalMoves(r, c)
-      return
-    }
-
-    // Clicked invalid target → deselect
+    if (color === 'w') { selectPiece(r, c); return }
     selected.value  = null
     validMoves.value = []
     return
   }
 
-  // Nothing selected — select own piece
-  if (color === 'w') {
-    selected.value  = [r, c]
-    validMoves.value = legalMoves(r, c)
-  }
+  if (color === 'w') selectPiece(r, c)
 }
 
-function confirmPromotion(type) {
+function selectPiece(r, c) {
+  const sq = squareName(r, c)
+  selected.value   = [r, c]
+  // Calcula destinos a partir dos lances legais do backend
+  const seen = new Set()
+  validMoves.value = backendLegalMoves.value
+    .filter(m => m.startsWith(sq))
+    .map(m => ({ r: 8 - parseInt(m[3]), c: FILES.indexOf(m[2]) }))
+    .filter(m => { const k = `${m.r},${m.c}`; if (seen.has(k)) return false; seen.add(k); return true })
+}
+
+function confirmPromotion(promoChar) {
   promoDialog.value = false
-  const { fr, fc, tr, tc, move } = promoData.value
-  executeMove(fr, fc, tr, tc, type, move)
+  const { fromSq, toSq } = promoData.value
   promoData.value = null
+  sendMove(fromSq + toSq + promoChar)
 }
 
-function squareName(r, c) {
-  return FILES[c] + (8 - r)
-}
-
-function executeMove(fr, fc, tr, tc, promo, moveObj) {
-  const nb     = cloneBoard(board.value)
-  const piece  = nb[fr][fc]
-  const captured = nb[tr][tc]
-  const newEP  = ref(null)
-
-  // Pawn: 2-square advance → set en passant
-  if (piece[1] === 'P' && Math.abs(tr - fr) === 2) {
-    newEP.value = [(fr + tr) / 2, fc]
-  }
-
-  // En passant capture
-  if (piece[1] === 'P' && fc !== tc && !nb[tr][tc]) {
-    nb[fr][tc] = null
-  }
-
-  nb[tr][tc] = promo ? (piece[0] + promo) : piece
-  nb[fr][fc] = null
-
-  // Castling rook move
-  if (moveObj?.castle) {
-    const row = tr
-    if (moveObj.castle === 'K') { nb[row][5] = nb[row][7]; nb[row][7] = null }
-    else                        { nb[row][3] = nb[row][0]; nb[row][0] = null }
-  }
-
-  // Update castling rights
-  if (piece === 'wK') { castleRights.value.wK = false; castleRights.value.wQ = false }
-  if (piece === 'bK') { castleRights.value.bK = false; castleRights.value.bQ = false }
-  if (fr === 7 && fc === 7) castleRights.value.wK = false
-  if (fr === 7 && fc === 0) castleRights.value.wQ = false
-  if (fr === 0 && fc === 7) castleRights.value.bK = false
-  if (fr === 0 && fc === 0) castleRights.value.bQ = false
-
-  board.value      = nb
-  enPassant.value  = newEP.value
-  lastMove.value   = [fr, fc, tr, tc]
+// ── Send move to backend ──────────────────────────────────
+async function sendMove(uci) {
+  aiThinking.value = true
+  error.value      = null
   selected.value   = null
   validMoves.value = []
 
-  // Record move
-  const notation = squareName(fr, fc) + squareName(tr, tc) + (promo ? promo.toLowerCase() : '')
-  moves.value.push(notation)
-
-  // Switch turn
+  // Aplica lance humano otimisticamente
+  applyUCIToBoard(uci)
+  moves.value.push(uci)
   turn.value = 'b'
-  updateGameStatus()
-  if (gameStatus.value === 'playing' || gameStatus.value === 'check') {
-    askAI(notation)
-  }
-}
-
-function updateGameStatus() {
-  const color = turn.value
-  const inCheck = isInCheck(color)
-  let hasLegal = false
-  outer: for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      if (colorOf(board.value[r][c]) === color && legalMoves(r, c).length > 0) {
-        hasLegal = true
-        break outer
-      }
-    }
-  }
-  if (!hasLegal) {
-    gameStatus.value = inCheck ? 'checkmate' : 'stalemate'
-  } else {
-    gameStatus.value = inCheck ? 'check' : 'playing'
-  }
-}
-
-// ── Resign / Draw ─────────────────────────────────────────
-function resign() {
-  gameStatus.value = 'checkmate' // encerra o jogo como derrota
-  chatStore.send('[Xadrez] Desisto. Você venceu!')
-}
-
-async function offerDraw() {
-  drawLoading.value = true
-  try {
-    await chatStore.send('[Xadrez] Ofereço empate. Você aceita?')
-    const last = [...chatStore.messages].reverse().find(m => m.role === 'model')
-    const text = (last?.text ?? '').toLowerCase()
-    const accepted = /aceito|empate|draw|concordo|sim/.test(text)
-    if (accepted) {
-      gameStatus.value = 'draw'
-    }
-  } finally {
-    drawLoading.value = false
-  }
-}
-
-// ── AI move ───────────────────────────────────────────────
-async function askAI(userMove) {
-  aiThinking.value = true
-  error.value      = null
-
-  const isFirst = moves.value.length === 1
-  const fen     = boardToFen()
-  const formatNote = 'OBRIGATÓRIO: primeira linha da resposta deve ser exatamente "LANCE: [origem][destino]" (exemplo: LANCE: e7e5). Sem esse formato o lance será ignorado. Após o lance, 1 frase curta de análise.'
-  const prompt  = isFirst
-    ? `[Xadrez] Nova partida. Você joga com as pretas, eu com as brancas. Minha abertura: ${userMove}. FEN: ${fen}. ${formatNote}`
-    : `[Xadrez] Minha jogada: ${userMove}. FEN: ${fen}. ${formatNote}`
 
   try {
-    await chatStore.send(prompt)
+    const { data } = await chessAPI.move(chessSessionId.value, uci)
 
-    // Pega a última mensagem do modelo no chat
-    const msgs     = chatStore.messages
-    const lastModel = [...msgs].reverse().find(m => m.role === 'model')
-    const text      = lastModel?.text ?? ''
-    const match     = text.match(/LANCE:\s*([a-h][1-8][a-h][1-8][qrbn]?)/i)
+    // Sincroniza com estado autoritativo do backend (inclui lance da IA)
+    board.value             = fenToBoard(data.fen)
+    moves.value             = data.moves
+    backendLegalMoves.value = data.legal_moves || []
 
-    if (!match) {
-      error.value = `Lance não encontrado na resposta. Verifique o chat.`
-      turn.value  = 'w'
-      return
+    if (data.ai_move) {
+      const m = data.ai_move
+      lastMove.value = [8 - parseInt(m[1]), FILES.indexOf(m[0]), 8 - parseInt(m[3]), FILES.indexOf(m[2])]
     }
 
-    applyAIMove(match[1].toLowerCase())
+    gameStatus.value = mapStatus(data.status)
+    turn.value       = 'w'
   } catch (e) {
-    error.value = 'Erro: ' + (chatStore.error ?? e.message)
-    turn.value  = 'w'
+    error.value = e.response?.data?.error || e.message
+    // Ressincroniza com o backend para desfazer o estado otimista
+    syncState()
   } finally {
     aiThinking.value = false
   }
 }
 
-function applyAIMove(moveStr) {
-  // Parse "e7e5" or "e7e5q"
-  const fc = FILES.indexOf(moveStr[0])
-  const fr = 8 - parseInt(moveStr[1])
-  const tc = FILES.indexOf(moveStr[2])
-  const tr = 8 - parseInt(moveStr[3])
-  const promo = moveStr[4] ? moveStr[4].toUpperCase() : null
-
-  if (!inBounds(fr, fc) || !inBounds(tr, tc)) {
-    error.value = `Lance inválido recebido: ${moveStr}`
-    turn.value  = 'w'
-    return
-  }
-
-  const piece = board.value[fr][fc]
-  if (!piece || piece[0] !== 'b') {
-    error.value = `Lance inválido: nenhuma peça preta em ${moveStr.slice(0,2)}`
-    turn.value  = 'w'
-    return
-  }
-
-  const nb = cloneBoard(board.value)
-
-  // En passant capture
-  if (piece[1] === 'P' && fc !== tc && !nb[tr][tc]) {
-    nb[fr][tc] = null
-  }
-
-  // Castling
-  if (piece[1] === 'K' && Math.abs(tc - fc) === 2) {
-    const row = fr
-    if (tc === 6) { nb[row][5] = nb[row][7]; nb[row][7] = null }
-    else          { nb[row][3] = nb[row][0]; nb[row][0] = null }
-  }
-
-  // Pawn EP target
-  let newEP = null
-  if (piece[1] === 'P' && Math.abs(tr - fr) === 2) {
-    newEP = [(fr + tr) / 2, fc]
-  }
-
-  nb[tr][tc] = promo ? ('b' + promo) : piece
-  nb[fr][fc] = null
-
-  // Update castling rights
-  if (piece === 'bK') { castleRights.value.bK = false; castleRights.value.bQ = false }
-  if (fr === 0 && fc === 7) castleRights.value.bK = false
-  if (fr === 0 && fc === 0) castleRights.value.bQ = false
-
-  board.value     = nb
-  enPassant.value = newEP
-  lastMove.value  = [fr, fc, tr, tc]
-  moves.value.push(moveStr)
-
-  turn.value = 'w'
-  updateGameStatus()
+async function syncState() {
+  try {
+    const { data } = await chessAPI.state(chessSessionId.value)
+    if (!data) return
+    board.value             = fenToBoard(data.fen)
+    moves.value             = data.moves || []
+    backendLegalMoves.value = data.legal_moves || []
+    gameStatus.value        = mapStatus(data.status)
+    turn.value              = 'w'
+  } catch { /* silencia */ }
 }
 
-// ── FEN generation ─────────────────────────────────────────
-function boardToFen() {
-  const PIECE_FEN = {
-    'wP':'P','wN':'N','wB':'B','wR':'R','wQ':'Q','wK':'K',
-    'bP':'p','bN':'n','bB':'b','bR':'r','bQ':'q','bK':'k',
+// Aplica um lance UCI no board local (visual apenas, sem validação)
+function applyUCIToBoard(uci) {
+  const fc = FILES.indexOf(uci[0]), fr = 8 - parseInt(uci[1])
+  const tc = FILES.indexOf(uci[2]), tr = 8 - parseInt(uci[3])
+  const promoChar = uci[4]
+  const nb    = board.value.map(row => [...row])
+  const piece = nb[fr][fc]
+  if (!piece) return
+  // En passant
+  if (piece[1] === 'P' && fc !== tc && !nb[tr][tc]) nb[fr][tc] = null
+  // Roque
+  if (piece[1] === 'K' && Math.abs(tc - fc) === 2) {
+    if (tc === 6) { nb[fr][5] = nb[fr][7]; nb[fr][7] = null }
+    else          { nb[fr][3] = nb[fr][0]; nb[fr][0] = null }
   }
-  const rows = board.value.map(row => {
-    let s = '', empty = 0
-    for (const cell of row) {
-      if (!cell) { empty++ }
-      else { if (empty) { s += empty; empty = 0 } s += PIECE_FEN[cell] }
-    }
-    if (empty) s += empty
-    return s
-  })
-  const active    = turn.value
-  const castle    = [
-    castleRights.value.wK ? 'K' : '',
-    castleRights.value.wQ ? 'Q' : '',
-    castleRights.value.bK ? 'k' : '',
-    castleRights.value.bQ ? 'q' : '',
-  ].join('') || '-'
-  const ep = enPassant.value ? (FILES[enPassant.value[1]] + (8 - enPassant.value[0])) : '-'
-  return `${rows.join('/')} ${active} ${castle} ${ep} 0 ${Math.floor(moves.value.length / 2) + 1}`
+  nb[tr][tc] = promoChar ? (piece[0] + promoChar.toUpperCase()) : piece
+  nb[fr][fc] = null
+  board.value    = nb
+  lastMove.value = [fr, fc, tr, tc]
+}
+
+function mapStatus(s) {
+  if (!s) return 'playing'
+  if (s === 'playing') return 'playing'
+  return s // checkmate_white, checkmate_black, stalemate, draw
+}
+
+// ── Resign / Draw ─────────────────────────────────────────
+function resign() {
+  gameStatus.value = 'checkmate_black'
+  chessAPI.reset(chessSessionId.value).catch(() => {})
+}
+
+function offerDraw() {
+  gameStatus.value = 'draw'
+  chessAPI.reset(chessSessionId.value).catch(() => {})
 }
 </script>
 
