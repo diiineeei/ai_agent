@@ -672,7 +672,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
 import { useMcpServersStore } from '@/stores/mcp_servers'
@@ -681,6 +681,7 @@ import { renderMarkdown } from '@/utils/markdown'
 import ChessGame from '@/components/ChessGame.vue'
 
 const router = useRouter()
+const route  = useRoute()
 const store = useChatStore()
 const agentConfigsStore = useAgentConfigsStore()
 const mcpStore = useMcpServersStore()
@@ -868,6 +869,10 @@ const renameValue = ref('')
 
 onMounted(async () => {
   await Promise.all([agentConfigsStore.fetchAll(), mcpStore.fetchAll()])
+  if (route.query.agent) {
+    const cfg = agentConfigsStore.configs.find((c) => c.id === route.query.agent)
+    if (cfg) pickAgent(cfg)
+  }
   selectedConfigId.value = store.agentConfigId
   scrollToBottom()
 })

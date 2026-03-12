@@ -110,6 +110,10 @@
               Editar
             </v-btn>
             <v-spacer />
+            <v-btn size="small" variant="text" color="primary" icon @click="router.push({ name: 'chat', query: { agent: cfg.id } })">
+              <v-icon size="18">mdi-chat-outline</v-icon>
+              <v-tooltip activator="parent" location="top">Iniciar conversa</v-tooltip>
+            </v-btn>
             <v-btn size="small" variant="text" color="error" icon @click="openDelete(cfg)">
               <v-icon size="18">mdi-delete-outline</v-icon>
             </v-btn>
@@ -408,13 +412,14 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
 import { useSkillsStore } from '@/stores/skills'
 import { useMcpServersStore } from '@/stores/mcp_servers'
 import { agentConfigsAPI } from '@/services/api'
 
 const route = useRoute()
+const router = useRouter()
 const store = useAgentConfigsStore()
 const skillsStore = useSkillsStore()
 const mcpStore = useMcpServersStore()
