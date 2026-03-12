@@ -192,6 +192,22 @@
                 </div>
                 <v-icon size="18" color="medium-emphasis">mdi-chevron-right</v-icon>
               </div>
+
+              <!-- Skills reveladas no hover -->
+              <div class="agent-card-skills px-4 pb-3">
+                <v-divider class="mb-2" />
+                <div class="d-flex flex-wrap gap-1">
+                  <v-chip
+                    v-for="s in cfg.enabled_skills"
+                    :key="s"
+                    size="x-small"
+                    variant="tonal"
+                    color="primary"
+                    :prepend-icon="skillIcon(s)"
+                  >{{ skillLabel(s) }}</v-chip>
+                  <span v-if="!cfg.enabled_skills?.length" class="text-caption text-disabled">Nenhuma skill</span>
+                </div>
+              </div>
             </v-card>
 
             <div v-if="!agentConfigsStore.configs.length" class="text-center text-medium-emphasis">
@@ -298,7 +314,7 @@
     <ChessGame
       v-if="chessOpen"
       ref="chessRef"
-      :configs="agentConfigsStore.configs"
+      :configs="agentConfigsStore.configs.filter(c => c.enabled_skills?.includes('chess'))"
       :initial-agent-id="store.agentConfigId"
       :initial-agent-name="store.agentName"
       @close="chessOpen = false"
@@ -410,6 +426,7 @@
             <v-tooltip activator="parent" location="top">Anexar arquivo (.txt, .pdf)</v-tooltip>
           </v-btn>
           <v-btn
+            v-if="currentAgentConfig?.enabled_skills?.includes('chess')"
             icon size="small" variant="text"
             title="Jogar xadrez"
             @click="chessOpen = !chessOpen"
@@ -665,6 +682,13 @@ const skillIcon  = (name) => SKILL_META[name]?.icon  ?? 'mdi-puzzle-outline'
 
 const chessOpen    = ref(false)
 const chessRef     = ref(null)
+
+// Fecha o xadrez se o agente atual não tiver a skill chess
+watch(currentAgentConfig, (cfg) => {
+  if (chessOpen.value && !cfg?.enabled_skills?.includes('chess')) {
+    chessOpen.value = false
+  }
+})
 
 const input        = ref('')
 const inputFocused = ref(false)
@@ -1203,6 +1227,17 @@ function applySuggestion(question) {
 
 .agent-pick-card { transition: all .15s ease; }
 .agent-pick-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+
+.agent-card-skills {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height .2s ease, opacity .2s ease;
+}
+.agent-pick-card:hover .agent-card-skills {
+  max-height: 80px;
+  opacity: 1;
+}
 
 /* Suggestion chips row */
 .suggestions-row {

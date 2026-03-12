@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"ai_agent/internal/model"
 	"ai_agent/internal/repository"
@@ -114,10 +115,12 @@ func (a *GeminiAgent) Send(ctx context.Context, sessionID, prompt string) (strin
 	}
 
 	config := &genai.GenerateContentConfig{
-		SystemInstruction: &genai.Content{
-			Parts: []*genai.Part{{Text: a.systemInstruction}},
-		},
 		Tools: a.getTools(),
+	}
+	if a.systemInstruction != "" {
+		config.SystemInstruction = &genai.Content{
+			Parts: []*genai.Part{{Text: a.systemInstruction}},
+		}
 	}
 
 	chat, err := a.client.Chats.Create(ctx, a.model, config, history)
@@ -158,6 +161,7 @@ func (a *GeminiAgent) processResponse(ctx context.Context, chat *genai.Chat, res
 			return "", TokenUsage{}, fmt.Errorf("model requested unknown function %q", call.Name)
 		}
 
+		log.Printf("[skill] model=%q skill=%q args=%v", a.model, call.Name, call.Args)
 		result, err := fn.FunctionCall(ctx, call.Args)
 		if err != nil {
 			return "", TokenUsage{}, fmt.Errorf("executing function %q: %w", call.Name, err)
@@ -204,7 +208,53 @@ func (a *GeminiAgent) loadHistory(ctx context.Context, sessionID string) ([]*gen
 	if err != nil {
 		return nil, err
 	}
-	return toGenAIContents(stored), nil
+	return a.filterHistory(toGenAIContents(stored)), nil
+}
+
+// filterHistory removes function call/response turns for tools no longer registered,
+// which would confuse the model with orphaned tool invocations.
+func (a *GeminiAgent) filterHistory(history []*genai.Content) []*genai.Content {
+	if len(a.functionsMap) == 0 {
+		// No tools registered — strip all function call/response parts from history
+		return stripFunctionParts(history)
+	}
+	result := make([]*genai.Content, 0, len(history))
+	for _, c := range history {
+		parts := make([]*genai.Part, 0, len(c.Parts))
+		for _, p := range c.Parts {
+			if p.FunctionCall != nil {
+				if _, ok := a.functionsMap[p.FunctionCall.Name]; !ok {
+					continue // drop call for unknown tool
+				}
+			}
+			if p.FunctionResponse != nil {
+				if _, ok := a.functionsMap[p.FunctionResponse.Name]; !ok {
+					continue // drop response for unknown tool
+				}
+			}
+			parts = append(parts, p)
+		}
+		if len(parts) > 0 {
+			result = append(result, &genai.Content{Role: c.Role, Parts: parts})
+		}
+	}
+	return result
+}
+
+func stripFunctionParts(history []*genai.Content) []*genai.Content {
+	result := make([]*genai.Content, 0, len(history))
+	for _, c := range history {
+		parts := make([]*genai.Part, 0, len(c.Parts))
+		for _, p := range c.Parts {
+			if p.FunctionCall == nil && p.FunctionResponse == nil {
+				parts = append(parts, p)
+			}
+		}
+		if len(parts) > 0 {
+			result = append(result, &genai.Content{Role: c.Role, Parts: parts})
+		}
+	}
+	return result
 }
 
 func (a *GeminiAgent) saveHistory(ctx context.Context, sessionID string, history []*genai.Content) error {

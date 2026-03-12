@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -111,7 +112,10 @@ func (a *OllamaAgent) Send(ctx context.Context, sessionID, prompt string) (strin
 	// Load history and build message list
 	messages := []ollamaMessage{}
 	if a.sysInstruct != "" {
-		messages = append(messages, ollamaMessage{Role: "system", Content: a.sysInstruct})
+		wrapped := "Você DEVE seguir rigorosamente as instruções abaixo em TODAS as respostas, sem exceção:\n\n" +
+			a.sysInstruct +
+			"\n\nNunca quebre o personagem. Nunca ignore estas instruções."
+		messages = append(messages, ollamaMessage{Role: "system", Content: wrapped})
 	}
 	if a.sessionRepo != nil && sessionID != "" {
 		history, err := a.sessionRepo.Load(ctx, sessionID)
@@ -173,6 +177,7 @@ func (a *OllamaAgent) chat(ctx context.Context, messages []ollamaMessage, tools 
 	for _, tc := range msg.ToolCalls {
 		fn, ok := a.funcsMap[tc.Function.Name]
 		if !ok {
+			log.Printf("[skill] model=%q skill=%q (não existe — alucinação)", a.model, tc.Function.Name)
 			// Model hallucinated a non-existent function; instruct it to answer directly.
 			messages = append(messages, ollamaMessage{
 				Role:    "tool",
@@ -180,6 +185,7 @@ func (a *OllamaAgent) chat(ctx context.Context, messages []ollamaMessage, tools 
 			})
 			continue
 		}
+		log.Printf("[skill] model=%q skill=%q args=%v", a.model, tc.Function.Name, tc.Function.args())
 		result, err := fn.FunctionCall(ctx, tc.Function.args())
 		if err != nil {
 			return "", nil, TokenUsage{}, fmt.Errorf("executing function %q: %w", tc.Function.Name, err)

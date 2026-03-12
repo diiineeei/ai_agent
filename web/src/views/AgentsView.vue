@@ -365,15 +365,15 @@ const GEMINI_MODELS = [
   { title: 'gemini-2.5-pro',   subtitle: 'Mais capaz' },
 ]
 const OLLAMA_MODELS = [
+  { title: 'llama3.2',     subtitle: '~5 GB' },
   { title: 'llama3.2:1b',  subtitle: '~1.3 GB · mais leve' },
   { title: 'llama3.2:3b',  subtitle: '~2 GB' },
-  { title: 'qwen2.5:3b',   subtitle: '~2 GB' },
-  { title: 'phi4-mini',    subtitle: '~2.5 GB' },
-  { title: 'llama3.2',     subtitle: '~5 GB' },
   { title: 'llama3.1',     subtitle: '~5 GB' },
-  { title: 'mistral',      subtitle: '~5 GB' },
   { title: 'qwen2.5',      subtitle: '~5 GB' },
+  { title: 'qwen2.5:3b',   subtitle: '~2 GB' },
+  { title: 'mistral',      subtitle: '~5 GB' },
   { title: 'phi4',         subtitle: '~9 GB' },
+  { title: 'phi4-mini',    subtitle: '~2.5 GB' },
   { title: 'gemma3',       subtitle: '~9 GB' },
 ]
 
@@ -443,7 +443,7 @@ function closeForm() { formDialog.value = false }
 async function improveInstruction() {
   improving.value = true
   try {
-    const { data } = await agentConfigsAPI.improveInstruction(form.value.model, form.value.system_instruction)
+    const { data } = await agentConfigsAPI.improveInstruction(form.value.model, form.value.system_instruction, form.value.provider, form.value.base_url)
     form.value.system_instruction = data.instruction
   } finally { improving.value = false }
 }

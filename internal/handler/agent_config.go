@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"ai_agent/internal/agent"
 	"ai_agent/internal/model"
 	"ai_agent/internal/repository"
 
@@ -101,6 +102,8 @@ func (h *AgentConfigHandler) ImproveInstruction(w http.ResponseWriter, r *http.R
 	var body struct {
 		Model       string `json:"model"`
 		Instruction string `json:"instruction"`
+		Provider    string `json:"provider"`
+		BaseURL     string `json:"base_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		jsonError(w, "body inválido: "+err.Error(), http.StatusBadRequest)
@@ -122,11 +125,24 @@ Retorne APENAS a instrução melhorada, sem nenhuma explicação adicional.
 Instrução:
 %s`, strings.TrimSpace(body.Instruction))
 
+	ctx := r.Context()
+
+	if body.Provider == "ollama" {
+		a := agent.NewOllama(body.BaseURL, body.Model, "", nil)
+		result, _, err := a.Send(ctx, "", prompt)
+		if err != nil {
+			jsonError(w, "erro ao chamar o modelo: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]string{"instruction": strings.TrimSpace(result)})
+		return
+	}
+
 	contents := []*genai.Content{
 		{Role: "user", Parts: []*genai.Part{{Text: prompt}}},
 	}
 
-	resp, err := h.geminiClient.Models.GenerateContent(r.Context(), body.Model, contents, nil)
+	resp, err := h.geminiClient.Models.GenerateContent(ctx, body.Model, contents, nil)
 	if err != nil {
 		jsonError(w, "erro ao chamar o modelo: "+err.Error(), http.StatusInternalServerError)
 		return
