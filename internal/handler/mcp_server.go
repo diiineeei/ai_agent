@@ -1,8 +1,14 @@
 package handler
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"os/exec"
+	"time"
 
 	"ai_agent/internal/model"
 	"ai_agent/internal/repository"
@@ -83,6 +89,96 @@ func (h *McpServerHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Ping handles POST /mcp-servers/{id}/ping
+func (h *McpServerHandler) Ping(w http.ResponseWriter, r *http.Request) {
+	id, err := bson.ObjectIDFromHex(r.PathValue("id"))
+	if err != nil {
+		jsonError(w, "ID inválido", http.StatusBadRequest)
+		return
+	}
+
+	srv, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "servidor não encontrado", http.StatusNotFound)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	online, latencyMs, msg := pingMcpServer(ctx, srv)
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"online":     online,
+		"latency_ms": latencyMs,
+		"message":    msg,
+	})
+}
+
+func pingMcpServer(ctx context.Context, srv *model.McpServer) (online bool, latencyMs int64, message string) {
+	initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ping","version":"1.0"}}}`
+
+	start := time.Now()
+
+	switch srv.Transport {
+	case "http":
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL, bytes.NewBufferString(initReq))
+		if err != nil {
+			return false, 0, fmt.Sprintf("erro ao criar requisição: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return false, 0, fmt.Sprintf("sem resposta: %v", err)
+		}
+		defer resp.Body.Close()
+		io.Copy(io.Discard, resp.Body)
+
+		ms := time.Since(start).Milliseconds()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return true, ms, fmt.Sprintf("online (%d ms)", ms)
+		}
+		return false, ms, fmt.Sprintf("HTTP %d", resp.StatusCode)
+
+	case "stdio":
+		cmd := exec.CommandContext(ctx, srv.Command, srv.Args...)
+		for k, v := range srv.Env {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			return false, 0, fmt.Sprintf("erro ao criar pipe: %v", err)
+		}
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return false, 0, fmt.Sprintf("erro ao criar pipe: %v", err)
+		}
+
+		if err := cmd.Start(); err != nil {
+			return false, 0, fmt.Sprintf("falha ao iniciar processo: %v", err)
+		}
+		defer cmd.Process.Kill() //nolint:errcheck
+
+		if _, err := fmt.Fprintln(stdin, initReq); err != nil {
+			return false, 0, fmt.Sprintf("erro ao escrever: %v", err)
+		}
+		stdin.Close()
+
+		buf := make([]byte, 4096)
+		n, _ := stdout.Read(buf)
+		ms := time.Since(start).Milliseconds()
+
+		if n > 0 {
+			return true, ms, fmt.Sprintf("online (%d ms)", ms)
+		}
+		return false, ms, "processo iniciou mas não respondeu"
+
+	default:
+		return false, 0, fmt.Sprintf("transport %q não suportado para ping", srv.Transport)
+	}
 }
 
 // Toggle handles PUT /mcp-servers/{id}/toggle

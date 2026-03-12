@@ -114,6 +114,21 @@
               Editar
             </v-btn>
             <v-spacer />
+            <v-btn
+              size="small"
+              variant="text"
+              :color="pingResults[srv.id]?.online === true ? 'success' : pingResults[srv.id]?.online === false ? 'error' : 'default'"
+              icon
+              :loading="pinging === srv.id"
+              @click="ping(srv)"
+            >
+              <v-icon size="18">
+                {{ pingResults[srv.id]?.online === true ? 'mdi-check-network' : pingResults[srv.id]?.online === false ? 'mdi-network-off' : 'mdi-lan-check' }}
+              </v-icon>
+              <v-tooltip activator="parent" location="top">
+                {{ pingResults[srv.id] ? pingResults[srv.id].message : 'Testar conexão' }}
+              </v-tooltip>
+            </v-btn>
             <v-btn size="small" variant="text" color="error" icon @click="openDelete(srv)">
               <v-icon size="18">mdi-delete-outline</v-icon>
             </v-btn>
@@ -361,6 +376,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useMcpServersStore } from '@/stores/mcp_servers'
+import { mcpServersAPI } from '@/services/api'
 
 const store = useMcpServersStore()
 
@@ -369,6 +385,8 @@ const deleteDialog = ref(false)
 const saving       = ref(false)
 const deleting     = ref(false)
 const toggling     = ref(null)
+const pinging      = ref(null)
+const pingResults  = ref({})
 const editTarget   = ref(null)
 const deleteTarget = ref(null)
 const snackbar     = ref(false)
@@ -497,6 +515,20 @@ async function toggle(srv) {
     notify(store.error || 'Erro ao alterar status.', 'error')
   } finally {
     toggling.value = null
+  }
+}
+
+async function ping(srv) {
+  pinging.value = srv.id
+  try {
+    const { data } = await mcpServersAPI.ping(srv.id)
+    pingResults.value = { ...pingResults.value, [srv.id]: data }
+    notify(data.message, data.online ? 'success' : 'error')
+  } catch {
+    pingResults.value = { ...pingResults.value, [srv.id]: { online: false, message: 'Erro ao testar conexão' } }
+    notify('Erro ao testar conexão.', 'error')
+  } finally {
+    pinging.value = null
   }
 }
 

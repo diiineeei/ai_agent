@@ -61,6 +61,7 @@ export const mcpServersAPI = {
   update: (id, data) => http.put(`/mcp-servers/${id}`, data),
   delete: (id)      => http.delete(`/mcp-servers/${id}`),
   toggle: (id)      => http.put(`/mcp-servers/${id}/toggle`),
+  ping:   (id)      => http.post(`/mcp-servers/${id}/ping`),
 }
 
 export const agentConfigsAPI = {

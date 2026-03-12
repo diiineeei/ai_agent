@@ -138,6 +138,7 @@ func main() {
 	mux.HandleFunc("PUT /mcp-servers/{id}", mcpServerHandler.Update)
 	mux.HandleFunc("DELETE /mcp-servers/{id}", mcpServerHandler.Delete)
 	mux.HandleFunc("PUT /mcp-servers/{id}/toggle", mcpServerHandler.Toggle)
+	mux.HandleFunc("POST /mcp-servers/{id}/ping", mcpServerHandler.Ping)
 
 	log.Printf("servidor iniciado em :%s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
