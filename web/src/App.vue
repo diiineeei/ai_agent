@@ -8,17 +8,18 @@
     >
       <!-- Header -->
       <div
-        class="d-flex align-center px-2"
+        class="d-flex align-center px-2 bg-primary"
         style="height: 56px; gap: 4px;"
         :style="rail && !mobile ? 'cursor:pointer; justify-content:center' : ''"
         @click="rail && !mobile ? (rail = false) : undefined"
       >
-        <v-icon color="primary" size="22">mdi-robot</v-icon>
-        <span v-if="!rail" class="text-body-1 font-weight-medium ml-1 flex-grow-1">Playground AI</span>
+        <v-icon color="white" size="22">mdi-robot</v-icon>
+        <span v-if="!rail" class="text-body-1 font-weight-medium ml-1 flex-grow-1 text-white">Playground AI</span>
         <v-btn
           v-if="!mobile && !rail"
           icon="mdi-chevron-left"
           variant="text"
+          color="white"
           size="small"
           @click.stop="rail = true"
         />
@@ -102,7 +103,7 @@
       </template>
     </v-navigation-drawer>
 
-    <v-app-bar v-if="mobile" flat border="b">
+    <v-app-bar v-if="mobile" flat color="primary">
       <v-app-bar-nav-icon @click="drawer = !drawer" />
       <v-app-bar-title>
         <v-icon color="primary" class="mr-1">mdi-robot</v-icon>

@@ -75,7 +75,7 @@
             </p>
             <p v-else class="text-caption text-disabled font-italic mb-3">Sem instrução de sistema.</p>
 
-            <!-- Skills chips -->
+            <!-- Skills + MCP chips -->
             <div class="d-flex flex-wrap gap-1">
               <v-chip
                 v-for="s in cfg.enabled_skills"
@@ -87,13 +87,6 @@
               >
                 {{ skillLabel(s) }}
               </v-chip>
-              <span v-if="!cfg.enabled_skills?.length && !cfg.mcp_server_ids?.length" class="text-caption text-disabled">
-                Nenhuma skill
-              </span>
-            </div>
-
-            <!-- MCP server chips -->
-            <div v-if="cfg.mcp_server_ids?.length" class="d-flex flex-wrap gap-1 mt-1">
               <v-chip
                 v-for="mid in cfg.mcp_server_ids"
                 :key="mid"
@@ -104,6 +97,9 @@
               >
                 {{ mcpName(mid) }}
               </v-chip>
+              <span v-if="!cfg.enabled_skills?.length && !cfg.mcp_server_ids?.length" class="text-caption text-disabled">
+                Nenhuma skill
+              </span>
             </div>
           </v-card-text>
 

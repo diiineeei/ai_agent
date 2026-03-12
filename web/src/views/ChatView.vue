@@ -86,7 +86,15 @@
                       color="primary"
                       :prepend-icon="skillIcon(s)"
                     >{{ skillLabel(s) }}</v-chip>
-                    <span v-if="!currentAgentConfig.enabled_skills?.length" class="text-caption text-disabled">Nenhuma</span>
+                    <v-chip
+                      v-for="mid in currentAgentConfig.mcp_server_ids"
+                      :key="mid"
+                      size="x-small"
+                      variant="tonal"
+                      color="secondary"
+                      prepend-icon="mdi-connection"
+                    >{{ mcpName(mid) }}</v-chip>
+                    <span v-if="!currentAgentConfig.enabled_skills?.length && !currentAgentConfig.mcp_server_ids?.length" class="text-caption text-disabled">Nenhuma</span>
                   </div>
                 </template>
               </v-list-item>
@@ -205,7 +213,15 @@
                     color="primary"
                     :prepend-icon="skillIcon(s)"
                   >{{ skillLabel(s) }}</v-chip>
-                  <span v-if="!cfg.enabled_skills?.length" class="text-caption text-disabled">Nenhuma skill</span>
+                  <v-chip
+                    v-for="mid in cfg.mcp_server_ids"
+                    :key="mid"
+                    size="x-small"
+                    variant="tonal"
+                    color="secondary"
+                    prepend-icon="mdi-connection"
+                  >{{ mcpName(mid) }}</v-chip>
+                  <span v-if="!cfg.enabled_skills?.length && !cfg.mcp_server_ids?.length" class="text-caption text-disabled">Nenhuma skill</span>
                 </div>
               </div>
             </v-card>
@@ -659,6 +675,7 @@ import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
+import { useMcpServersStore } from '@/stores/mcp_servers'
 import { chatAPI, filesAPI, feedbackAPI, suggestAPI } from '@/services/api'
 import { renderMarkdown } from '@/utils/markdown'
 import ChessGame from '@/components/ChessGame.vue'
@@ -666,10 +683,13 @@ import ChessGame from '@/components/ChessGame.vue'
 const router = useRouter()
 const store = useChatStore()
 const agentConfigsStore = useAgentConfigsStore()
+const mcpStore = useMcpServersStore()
 
 const currentAgentConfig = computed(() =>
   agentConfigsStore.configs.find((c) => c.id === store.agentConfigId) ?? null
 )
+
+const mcpName = (id) => mcpStore.servers.find((s) => s.id === id)?.name ?? id.slice(0, 8) + '…'
 
 const SKILL_META = {
   weather:           { label: 'Clima',              icon: 'mdi-weather-partly-cloudy' },
@@ -847,7 +867,7 @@ const renamingId  = ref(null)
 const renameValue = ref('')
 
 onMounted(async () => {
-  await agentConfigsStore.fetchAll()
+  await Promise.all([agentConfigsStore.fetchAll(), mcpStore.fetchAll()])
   selectedConfigId.value = store.agentConfigId
   scrollToBottom()
 })
