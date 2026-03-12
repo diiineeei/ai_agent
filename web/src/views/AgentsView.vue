@@ -87,9 +87,23 @@
               >
                 {{ skillLabel(s) }}
               </v-chip>
-              <span v-if="!cfg.enabled_skills?.length" class="text-caption text-disabled">
+              <span v-if="!cfg.enabled_skills?.length && !cfg.mcp_server_ids?.length" class="text-caption text-disabled">
                 Nenhuma skill
               </span>
+            </div>
+
+            <!-- MCP server chips -->
+            <div v-if="cfg.mcp_server_ids?.length" class="d-flex flex-wrap gap-1 mt-1">
+              <v-chip
+                v-for="mid in cfg.mcp_server_ids"
+                :key="mid"
+                size="x-small"
+                variant="tonal"
+                color="secondary"
+                prepend-icon="mdi-connection"
+              >
+                {{ mcpName(mid) }}
+              </v-chip>
             </div>
           </v-card-text>
 
@@ -295,6 +309,53 @@
           </p>
         </div>
 
+        <!-- MCP Servers -->
+        <div class="d-flex align-center gap-1 mt-5 mb-3">
+          <v-icon size="16" color="medium-emphasis">mdi-connection</v-icon>
+          <span class="text-body-2 font-weight-medium">Servidores MCP</span>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2">
+          <v-card
+            v-for="srv in mcpStore.servers"
+            :key="srv.id"
+            :variant="form.mcp_server_ids.includes(srv.id) ? 'flat' : 'outlined'"
+            :color="form.mcp_server_ids.includes(srv.id) ? 'secondary' : undefined"
+            rounded="lg"
+            class="skill-chip cursor-pointer"
+            @click="toggleMcp(srv.id)"
+          >
+            <div class="d-flex align-center gap-2 px-3 py-2">
+              <v-icon
+                :color="form.mcp_server_ids.includes(srv.id) ? 'on-secondary' : 'medium-emphasis'"
+                size="18"
+              >
+                {{ srv.transport === 'http' ? 'mdi-web' : 'mdi-console' }}
+              </v-icon>
+              <span
+                class="text-body-2 font-weight-medium"
+                :class="form.mcp_server_ids.includes(srv.id) ? 'text-on-secondary' : 'text-medium-emphasis'"
+              >
+                {{ srv.name }}
+              </span>
+              <v-chip v-if="!srv.enabled" size="x-small" variant="tonal" color="warning" class="ml-1">
+                inativo
+              </v-chip>
+              <v-icon
+                v-if="form.mcp_server_ids.includes(srv.id)"
+                size="14"
+                color="on-secondary"
+              >
+                mdi-check
+              </v-icon>
+            </div>
+          </v-card>
+          <p v-if="!mcpStore.servers.length" class="text-caption text-disabled">
+            Nenhum servidor MCP cadastrado.
+            <router-link to="/mcp" class="text-primary">Cadastrar agora</router-link>
+          </p>
+        </div>
+
       </v-card-text>
 
       <v-divider />
@@ -350,15 +411,17 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAgentConfigsStore } from '@/stores/agent_configs'
 import { useSkillsStore } from '@/stores/skills'
+import { useMcpServersStore } from '@/stores/mcp_servers'
 import { agentConfigsAPI } from '@/services/api'
 
 const route = useRoute()
 const store = useAgentConfigsStore()
 const skillsStore = useSkillsStore()
+const mcpStore = useMcpServersStore()
 
 const GEMINI_MODELS = [
   { title: 'gemini-2.5-flash', subtitle: 'Rápido e eficiente' },
@@ -388,9 +451,11 @@ const SKILL_META = {
 }
 const skillLabel = (name) => SKILL_META[name]?.label ?? name
 const skillIcon  = (name) => SKILL_META[name]?.icon  ?? 'mdi-puzzle-outline'
+const mcpName    = (id)   => mcpStore.servers.find((s) => s.id === id)?.name ?? id.slice(0, 8) + '…'
 
-const avatarInput  = ref(null)
-const formDialog   = ref(false)
+const avatarInput    = ref(null)
+const formDialog     = ref(false)
+const skipProviderWatch = ref(false)
 const deleteDialog = ref(false)
 const saving       = ref(false)
 const deleting     = ref(false)
@@ -398,17 +463,17 @@ const improving    = ref(false)
 const editTarget   = ref(null)
 const deleteTarget = ref(null)
 
-const emptyForm = () => ({ name: '', avatar: '', model: 'gemini-2.5-flash', provider: 'gemini', base_url: '', system_instruction: '', enabled_skills: [] })
+const emptyForm = () => ({ name: '', avatar: '', model: 'gemini-2.5-flash', provider: 'gemini', base_url: '', system_instruction: '', enabled_skills: [], mcp_server_ids: [] })
 const form = ref(emptyForm())
 
 watch(() => form.value.provider, (provider, prev) => {
-  if (provider === prev) return
+  if (provider === prev || skipProviderWatch.value) return
   form.value.model = provider === 'ollama' ? OLLAMA_MODELS[0].title : GEMINI_MODELS[0].title
   if (provider !== 'ollama') form.value.base_url = ''
 })
 
 onMounted(async () => {
-  await Promise.all([store.fetchAll(), skillsStore.fetchSkills()])
+  await Promise.all([store.fetchAll(), skillsStore.fetchSkills(), mcpStore.fetchAll()])
   if (route.query.edit) {
     const cfg = store.configs.find((c) => c.id === route.query.edit)
     if (cfg) openEdit(cfg)
@@ -430,11 +495,19 @@ function toggleSkill(name) {
   else form.value.enabled_skills.splice(idx, 1)
 }
 
+function toggleMcp(id) {
+  const idx = form.value.mcp_server_ids.indexOf(id)
+  if (idx === -1) form.value.mcp_server_ids.push(id)
+  else form.value.mcp_server_ids.splice(idx, 1)
+}
+
 function openCreate() { editTarget.value = null; form.value = emptyForm(); formDialog.value = true }
 
 function openEdit(cfg) {
+  skipProviderWatch.value = true
   editTarget.value = cfg
-  form.value = { name: cfg.name, avatar: cfg.avatar ?? '', model: cfg.model, provider: cfg.provider ?? 'gemini', base_url: cfg.base_url ?? '', system_instruction: cfg.system_instruction ?? '', enabled_skills: [...(cfg.enabled_skills ?? [])] }
+  form.value = { name: cfg.name, avatar: cfg.avatar ?? '', model: cfg.model, provider: cfg.provider ?? 'gemini', base_url: cfg.base_url ?? '', system_instruction: cfg.system_instruction ?? '', enabled_skills: [...(cfg.enabled_skills ?? [])], mcp_server_ids: [...(cfg.mcp_server_ids ?? [])] }
+  nextTick(() => { skipProviderWatch.value = false })
   formDialog.value = true
 }
 

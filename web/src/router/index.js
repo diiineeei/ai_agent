@@ -4,6 +4,7 @@ import FilesView from '@/views/FilesView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import AgentsView from '@/views/AgentsView.vue'
 import MetricsView from '@/views/MetricsView.vue'
+import McpView from '@/views/McpView.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -13,5 +14,6 @@ export default createRouter({
     { path: '/skills', name: 'skills', component: SkillsView },
     { path: '/agents', name: 'agents', component: AgentsView },
     { path: '/metrics', name: 'metrics', component: MetricsView },
+    { path: '/mcp', name: 'mcp', component: McpView },
   ],
 })

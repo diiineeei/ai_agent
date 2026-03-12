@@ -84,6 +84,7 @@ func (r *MongoAgentConfigRepository) Update(ctx context.Context, id string, cfg 
 		"provider":           cfg.Provider,
 		"base_url":           cfg.BaseURL,
 		"enabled_skills":     cfg.EnabledSkills,
+		"mcp_server_ids":     cfg.McpServerIDs,
 		"updated_at":         time.Now(),
 	}}
 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)

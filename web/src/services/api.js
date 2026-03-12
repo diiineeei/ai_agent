@@ -55,6 +55,14 @@ export const suggestAPI = {
   getQuestions: (sessionId) => http.get('/suggest-questions', { params: { session_id: sessionId } }),
 }
 
+export const mcpServersAPI = {
+  list:   ()        => http.get('/mcp-servers'),
+  create: (data)    => http.post('/mcp-servers', data),
+  update: (id, data) => http.put(`/mcp-servers/${id}`, data),
+  delete: (id)      => http.delete(`/mcp-servers/${id}`),
+  toggle: (id)      => http.put(`/mcp-servers/${id}/toggle`),
+}
+
 export const agentConfigsAPI = {
   list: () => http.get('/agent-configs'),
   getById: (id) => http.get(`/agent-configs/${id}`),

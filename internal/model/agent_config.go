@@ -15,6 +15,7 @@ type AgentConfig struct {
 	Provider          string        `bson:"provider,omitempty" json:"provider"`  // "gemini" | "ollama" (default "gemini")
 	BaseURL           string        `bson:"base_url,omitempty" json:"base_url"` // e.g. "http://localhost:11434"
 	EnabledSkills     []string      `bson:"enabled_skills"     json:"enabled_skills"`
+	McpServerIDs      []string      `bson:"mcp_server_ids"     json:"mcp_server_ids"`
 	CreatedAt         time.Time     `bson:"created_at"         json:"created_at"`
 	UpdatedAt         time.Time     `bson:"updated_at"         json:"updated_at"`
 }

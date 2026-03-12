@@ -141,11 +141,12 @@ const rail   = ref(false)
 const theme  = ref('light')
 
 const navItems = [
-  { title: 'Chat',     icon: 'mdi-chat',         to: '/' },
-  { title: 'Arquivos', icon: 'mdi-file-multiple', to: '/files' },
-  { title: 'Skills',   icon: 'mdi-puzzle',        to: '/skills' },
-  { title: 'Agentes',  icon: 'mdi-robot-happy',   to: '/agents' },
-  { title: 'Métricas', icon: 'mdi-chart-bar',     to: '/metrics' },
+  { title: 'Chat',        icon: 'mdi-chat',              to: '/' },
+  { title: 'Arquivos',    icon: 'mdi-file-multiple',     to: '/files' },
+  { title: 'Skills',      icon: 'mdi-puzzle',            to: '/skills' },
+  { title: 'Agentes',     icon: 'mdi-robot-happy',       to: '/agents' },
+  { title: 'Servidores MCP', icon: 'mdi-connection',     to: '/mcp' },
+  { title: 'Métricas',    icon: 'mdi-chart-bar',         to: '/metrics' },
 ]
 
 function toggleTheme() {

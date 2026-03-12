@@ -49,6 +49,7 @@ func main() {
 	agentConfigRepo := repository.NewMongoAgentConfigRepository(db.Collection("agent_configs"))
 	feedbackRepo := repository.NewMongoFeedbackRepository(db.Collection("feedback"))
 	chessRepo := repository.NewMongoChessRepository(db.Collection("chess_games"))
+	mcpServerRepo := repository.NewMongoMcpServerRepository(db.Collection("mcp_servers"))
 
 	// Embedder
 	embedder := agent.NewEmbedder()
@@ -103,6 +104,7 @@ func main() {
 	feedbackHandler := handler.NewFeedbackHandler(feedbackRepo)
 	suggestHandler := handler.NewSuggestHandler(geminiClient, sessionRepo, agentConfigRepo)
 	chessHandler := handler.NewChessHandler(geminiClient, chessRepo, agentConfigRepo, sessionRepo)
+	mcpServerHandler := handler.NewMcpServerHandler(mcpServerRepo)
 
 	// Routes (Go 1.22+ ServeMux with method+pattern)
 	mux := http.NewServeMux()
@@ -130,6 +132,12 @@ func main() {
 	mux.HandleFunc("GET /agent-configs/{id}", agentConfigHandler.GetByID)
 	mux.HandleFunc("PUT /agent-configs/{id}", agentConfigHandler.Update)
 	mux.HandleFunc("DELETE /agent-configs/{id}", agentConfigHandler.Delete)
+
+	mux.HandleFunc("GET /mcp-servers", mcpServerHandler.List)
+	mux.HandleFunc("POST /mcp-servers", mcpServerHandler.Create)
+	mux.HandleFunc("PUT /mcp-servers/{id}", mcpServerHandler.Update)
+	mux.HandleFunc("DELETE /mcp-servers/{id}", mcpServerHandler.Delete)
+	mux.HandleFunc("PUT /mcp-servers/{id}/toggle", mcpServerHandler.Toggle)
 
 	log.Printf("servidor iniciado em :%s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
