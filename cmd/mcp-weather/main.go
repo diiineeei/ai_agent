@@ -114,27 +114,27 @@ type weatherResult struct {
 func wmoDescription(code int) string {
 	switch {
 	case code == 0:
-		return "Céu limpo"
+		return "☀️ Céu limpo"
 	case code <= 2:
-		return "Parcialmente nublado"
+		return "⛅ Parcialmente nublado"
 	case code == 3:
-		return "Nublado"
+		return "☁️ Nublado"
 	case code <= 48:
-		return "Neblina"
+		return "🌫️ Neblina"
 	case code <= 55:
-		return "Garoa"
+		return "🌦️ Garoa"
 	case code <= 65:
-		return "Chuva"
+		return "🌧️ Chuva"
 	case code <= 75:
-		return "Neve"
+		return "❄️ Neve"
 	case code <= 82:
-		return "Pancadas de chuva"
+		return "🌨️ Pancadas de chuva"
 	case code <= 84:
-		return "Granizo"
+		return "🌩️ Granizo"
 	case code <= 99:
-		return "Tempestade"
+		return "⛈️ Tempestade"
 	default:
-		return "Desconhecido"
+		return "❓ Desconhecido"
 	}
 }
 
