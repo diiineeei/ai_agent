@@ -13,15 +13,16 @@ import (
 	"ai_agent/internal/repository"
 	"ai_agent/internal/skills"
 
+	texttospeech "cloud.google.com/go/texttospeech/apiv1"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"google.golang.org/api/option"
 	"google.golang.org/genai"
 )
 
 func main() {
 	apiKey := mustEnv("GEMINI_API_KEY")
 	claudeAPIKey := getEnv("ANTHROPIC_API_KEY", "")
-	ttsAPIKey := getEnv("GOOGLE_TTS_API_KEY", "/home/rodinei/src/github.com/diiineeei/ai_agent/rodinei-9f69e511f308.json")
 	defaultModel := getEnv("MODEL", "gemini-2.5-flash")
 	port := getEnv("HTTP_PORT", "8080")
 	mongoURI := getEnv("MONGODB_URI", "mongodb://localhost:27017")
@@ -98,6 +99,21 @@ func main() {
 		}
 	}
 
+	// TTS client — usa GOOGLE_APPLICATION_CREDENTIALS ou GOOGLE_TTS_CREDENTIALS_FILE
+	var ttsClient *texttospeech.Client
+	ttsCredsFile := getEnv("GOOGLE_TTS_CREDENTIALS_FILE", "")
+	var ttsOpts []option.ClientOption
+	if ttsCredsFile != "" {
+		ttsOpts = append(ttsOpts, option.WithCredentialsFile(ttsCredsFile))
+	}
+	ttsClient, err = texttospeech.NewClient(ctx, ttsOpts...)
+	if err != nil {
+		log.Printf("aviso: TTS não disponível (%v)", err)
+		ttsClient = nil
+	} else {
+		defer ttsClient.Close()
+	}
+
 	// Handlers
 	chatHandler := handler.NewChatHandler(geminiClient, claudeAPIKey, sessionRepo, agentConfigRepo, registry)
 	fileHandler := handler.NewFileHandler(fileRepo, embedder)
@@ -107,7 +123,7 @@ func main() {
 	suggestHandler := handler.NewSuggestHandler(geminiClient, claudeAPIKey, sessionRepo, agentConfigRepo)
 	chessHandler := handler.NewChessHandler(geminiClient, claudeAPIKey, chessRepo, agentConfigRepo, sessionRepo)
 	mcpServerHandler := handler.NewMcpServerHandler(mcpServerRepo)
-	ttsHandler := handler.NewTTSHandler(ttsAPIKey)
+	ttsHandler := handler.NewTTSHandler(ttsClient)
 
 	// Routes (Go 1.22+ ServeMux with method+pattern)
 	mux := http.NewServeMux()

@@ -2,34 +2,36 @@ package handler
 
 import (
 	"bytes"
-	"encoding/base64"
+	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"regexp"
 	"strings"
+
+	texttospeech "cloud.google.com/go/texttospeech/apiv1"
+	"cloud.google.com/go/texttospeech/apiv1/texttospeechpb"
 )
 
 type TTSHandler struct {
-	apiKey string
+	client *texttospeech.Client
 }
 
-func NewTTSHandler(apiKey string) *TTSHandler { return &TTSHandler{apiKey: apiKey} }
+func NewTTSHandler(client *texttospeech.Client) *TTSHandler { return &TTSHandler{client: client} }
 
 var (
-	reCodeBlock   = regexp.MustCompile("(?s)```.*?```")
-	reInlineCode  = regexp.MustCompile("`([^`]+)`")
-	reAsteriskBold = regexp.MustCompile(`\*\*(.*?)\*\*`)
-	reUnderBold    = regexp.MustCompile(`__(.*?)__`)
+	reCodeBlock      = regexp.MustCompile("(?s)```.*?```")
+	reInlineCode     = regexp.MustCompile("`([^`]+)`")
+	reAsteriskBold   = regexp.MustCompile(`\*\*(.*?)\*\*`)
+	reUnderBold      = regexp.MustCompile(`__(.*?)__`)
 	reAsteriskItalic = regexp.MustCompile(`\*(.*?)\*`)
 	reUnderItalic    = regexp.MustCompile(`_(.*?)_`)
-	reHeading     = regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`)
-	reURL         = regexp.MustCompile(`https?://\S+`)
-	reListItem    = regexp.MustCompile(`(?m)^\s*[-*+]\s+`)
-	reOrderedItem = regexp.MustCompile(`(?m)^\s*\d+\.\s+`)
-	reEmoji       = regexp.MustCompile(`[\x{1F000}-\x{1FFFF}]|[\x{2600}-\x{27BF}]`)
-	reMultiSpace  = regexp.MustCompile(`\s{2,}`)
+	reHeading        = regexp.MustCompile(`(?m)^#{1,6}\s+(.+)$`)
+	reURL            = regexp.MustCompile(`https?://\S+`)
+	reListItem       = regexp.MustCompile(`(?m)^\s*[-*+]\s+`)
+	reOrderedItem    = regexp.MustCompile(`(?m)^\s*\d+\.\s+`)
+	reEmoji          = regexp.MustCompile(`[\x{1F000}-\x{1FFFF}]|[\x{2600}-\x{27BF}]`)
+	reMultiSpace     = regexp.MustCompile(`\s{2,}`)
 )
 
 func cleanTextForTTS(text string) string {
@@ -50,79 +52,18 @@ func cleanTextForTTS(text string) string {
 	return strings.TrimSpace(text)
 }
 
-type cloudTTSRequest struct {
-	Input      ttsInput      `json:"input"`
-	Voice      ttsVoice      `json:"voice"`
-	AudioConfig ttsAudioConfig `json:"audioConfig"`
-}
-
-type ttsInput struct {
-	Text string `json:"text"`
-}
-
-type ttsVoice struct {
-	LanguageCode string `json:"languageCode"`
-	Name         string `json:"name"`
-}
-
-type ttsAudioConfig struct {
-	AudioEncoding string  `json:"audioEncoding"`
-	SpeakingRate  float64 `json:"speakingRate"`
-	Pitch         float64 `json:"pitch"`
-}
-
-type cloudTTSResponse struct {
-	AudioContent string `json:"audioContent"` // base64 MP3
-	Error        *struct {
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
-}
-
-func (h *TTSHandler) cloudTTSAudio(text string) ([]byte, error) {
-	payload := cloudTTSRequest{
-		Input: ttsInput{Text: text},
-		Voice: ttsVoice{
-			LanguageCode: "pt-BR",
-			Name:         "pt-BR-Neural2-C",
-		},
-		AudioConfig: ttsAudioConfig{
-			AudioEncoding: "MP3",
-			SpeakingRate:  1.0,
-			Pitch:         0.0,
-		},
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	url := "https://texttospeech.googleapis.com/v1/text:synthesize?key=" + h.apiKey
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body)) //nolint:noctx
-	if err != nil {
-		return nil, fmt.Errorf("cloud tts: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var result cloudTTSResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("cloud tts decode: %w", err)
-	}
-	if result.Error != nil {
-		return nil, fmt.Errorf("cloud tts: %s", result.Error.Message)
-	}
-
-	audio, err := base64.StdEncoding.DecodeString(result.AudioContent)
-	if err != nil {
-		return nil, fmt.Errorf("cloud tts base64: %w", err)
-	}
-	return audio, nil
-}
+const defaultVoice = "pt-BR-Wavenet-B"
 
 // Speak handles POST /tts
 func (h *TTSHandler) Speak(w http.ResponseWriter, r *http.Request) {
+	if h.client == nil {
+		jsonError(w, "TTS não disponível: credenciais não configuradas", http.StatusServiceUnavailable)
+		return
+	}
+
 	var body struct {
-		Text string `json:"text"`
+		Text  string `json:"text"`
+		Voice string `json:"voice"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text == "" {
 		jsonError(w, "campo 'text' é obrigatório", http.StatusBadRequest)
@@ -135,7 +76,29 @@ func (h *TTSHandler) Speak(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	audio, err := h.cloudTTSAudio(clean)
+	if !strings.HasSuffix(clean, ".") && !strings.HasSuffix(clean, "!") && !strings.HasSuffix(clean, "?") {
+		clean += "."
+	}
+
+	voice := body.Voice
+	if voice == "" {
+		voice = defaultVoice
+	}
+
+	req := &texttospeechpb.SynthesizeSpeechRequest{
+		Input: &texttospeechpb.SynthesisInput{
+			InputSource: &texttospeechpb.SynthesisInput_Text{Text: clean},
+		},
+		Voice: &texttospeechpb.VoiceSelectionParams{
+			LanguageCode: "pt-BR",
+			Name:         voice,
+		},
+		AudioConfig: &texttospeechpb.AudioConfig{
+			AudioEncoding: texttospeechpb.AudioEncoding_MP3,
+		},
+	}
+
+	resp, err := h.client.SynthesizeSpeech(context.Background(), req)
 	if err != nil {
 		jsonError(w, "erro ao gerar áudio: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -143,5 +106,5 @@ func (h *TTSHandler) Speak(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "audio/mpeg")
 	w.Header().Set("Cache-Control", "no-store")
-	io.Copy(w, bytes.NewReader(audio)) //nolint:errcheck
+	io.Copy(w, bytes.NewReader(resp.AudioContent)) //nolint:errcheck
 }

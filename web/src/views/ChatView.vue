@@ -28,6 +28,48 @@
         <v-icon size="22">mdi-square-edit-outline</v-icon>
       </v-btn>
 
+      <!-- TTS button always visible -->
+      <v-menu location="bottom end" :close-on-content-click="false" min-width="270">
+        <template #activator="{ props: ttsMenuProps }">
+          <v-btn
+            icon
+            size="small"
+            variant="text"
+            :color="ttsEnabled ? 'primary' : undefined"
+            title="Voz do agente"
+            v-bind="ttsMenuProps"
+          >
+            <v-icon size="22">{{ ttsEnabled ? 'mdi-volume-high' : 'mdi-volume-off' }}</v-icon>
+          </v-btn>
+        </template>
+        <v-card rounded="lg">
+          <v-list density="compact" nav>
+            <v-list-subheader>Voz do agente</v-list-subheader>
+            <v-list-item rounded="lg" @click="toggleTts">
+              <template #prepend>
+                <v-icon class="mr-3">{{ ttsEnabled ? 'mdi-volume-high' : 'mdi-volume-off' }}</v-icon>
+              </template>
+              <v-list-item-title>Leitura em voz alta</v-list-item-title>
+              <template #append>
+                <v-switch :model-value="ttsEnabled" color="primary" hide-details density="compact" @click.stop="toggleTts" />
+              </template>
+            </v-list-item>
+            <v-list-item rounded="lg">
+              <v-select
+                v-model="ttsVoice"
+                :items="TTS_VOICES"
+                item-title="label"
+                item-value="value"
+                label="Voz"
+                variant="outlined"
+                density="compact"
+                hide-details
+              />
+            </v-list-item>
+          </v-list>
+        </v-card>
+      </v-menu>
+
       <v-menu location="bottom end" :close-on-content-click="false" min-width="260">
         <template #activator="{ props: menuProps }">
           <v-btn icon size="small" variant="text" v-bind="menuProps">
@@ -103,15 +145,6 @@
             <!-- Configurações -->
             <v-divider class="my-1" />
             <v-list-subheader>Configurações</v-list-subheader>
-            <v-list-item rounded="lg" @click="toggleTts">
-              <template #prepend>
-                <v-icon class="mr-3">{{ ttsEnabled ? 'mdi-volume-high' : 'mdi-volume-off' }}</v-icon>
-              </template>
-              <v-list-item-title>Voz</v-list-item-title>
-              <template #append>
-                <v-switch :model-value="ttsEnabled" color="primary" hide-details density="compact" @click.stop="toggleTts" />
-              </template>
-            </v-list-item>
             <v-list-item rounded="lg" @click="showTokens = !showTokens">
               <template #prepend>
                 <v-icon class="mr-3">mdi-counter</v-icon>
@@ -719,9 +752,22 @@ watch(() => store.loading, (loading) => {
 })
 
 // ── Voice ──────────────────────────────────────────────
+const TTS_VOICES = [
+  { value: 'pt-BR-Wavenet-B', label: 'Wavenet B — Masculino' },
+  { value: 'pt-BR-Wavenet-A', label: 'Wavenet A — Feminino' },
+  { value: 'pt-BR-Wavenet-C', label: 'Wavenet C — Feminino' },
+  { value: 'pt-BR-Wavenet-D', label: 'Wavenet D — Masculino' },
+  { value: 'pt-BR-Wavenet-E', label: 'Wavenet E — Feminino' },
+  { value: 'pt-BR-Neural2-B', label: 'Neural2 B — Masculino' },
+  { value: 'pt-BR-Neural2-C', label: 'Neural2 C — Feminino' },
+  { value: 'pt-BR-Studio-B',  label: 'Studio B — Masculino' },
+  { value: 'pt-BR-Studio-C',  label: 'Studio C — Feminino' },
+]
+
 const listening       = ref(false)   // toggle mode: recording, click to stop
 const holdRecording   = ref(false)   // hold mode: recording while held
 const ttsEnabled      = ref(false)
+const ttsVoice        = ref('pt-BR-Wavenet-B')
 const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
 
 let currentAudio = null
@@ -1107,7 +1153,7 @@ async function speak(text) {
     const resp = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, voice: ttsVoice.value }),
     })
     if (!resp.ok) return
     const blob = await resp.blob()
