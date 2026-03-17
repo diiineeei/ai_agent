@@ -34,11 +34,18 @@
           <!-- Agent header -->
           <div class="pa-4 d-flex align-center">
             <v-avatar color="primary" variant="tonal" size="44" class="mr-3 flex-shrink-0">
-              <span class="text-body-1 font-weight-bold">{{ agentInitial(row.agent_config_id) }}</span>
+              <v-img v-if="agentAvatar(row.agent_config_id)" :src="agentAvatar(row.agent_config_id)" cover />
+              <span v-else class="text-body-1 font-weight-bold">{{ agentInitial(row.agent_config_id) }}</span>
             </v-avatar>
             <div class="overflow-hidden flex-grow-1">
               <div class="text-body-1 font-weight-bold text-truncate">{{ agentName(row.agent_config_id) }}</div>
-              <div class="text-caption text-medium-emphasis">{{ row.thumbs_up + row.thumbs_down }} avaliações</div>
+              <div class="d-flex align-center gap-1 mt-1 flex-wrap">
+                <v-chip v-if="agentModel(row.agent_config_id)" size="x-small" variant="tonal" color="secondary">
+                  <v-icon start size="10">mdi-chip</v-icon>
+                  {{ agentModel(row.agent_config_id) }}
+                </v-chip>
+                <span class="text-caption text-medium-emphasis">{{ row.thumbs_up + row.thumbs_down }} avaliações</span>
+              </div>
             </div>
           </div>
 
@@ -116,13 +123,25 @@ async function load() {
   }
 }
 
+function agentConfig(id) {
+  return agentConfigsStore.configs.find((c) => c.id === id)
+}
+
 function agentName(id) {
   if (!id) return 'Agente desconhecido'
-  return agentConfigsStore.configs.find((c) => c.id === id)?.name ?? id
+  return agentConfig(id)?.name ?? id
 }
 
 function agentInitial(id) {
   return agentName(id)[0]?.toUpperCase() ?? '?'
+}
+
+function agentAvatar(id) {
+  return agentConfig(id)?.avatar ?? null
+}
+
+function agentModel(id) {
+  return agentConfig(id)?.model ?? null
 }
 
 function satisfactionPct(row) {

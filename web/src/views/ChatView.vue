@@ -803,7 +803,7 @@ const TTS_VOICES = [
   { value: 'pt-BR-Wavenet-B', label: 'Rogerinho (pt-br)' },
   { value: 'pt-BR-Wavenet-A', label: 'Claudia (pt-br)' },
   { value: 'pt-BR-Wavenet-C', label: 'Genevivi (pt-br)' },
-  { value: 'pt-BR-Wavenet-D', label: 'Paulo (pt-br)' },
+  { value: 'pt-BR-Wavenet-D', label: 'Beatriz (pt-br)' },
   { value: 'pt-BR-Wavenet-E', label: 'Gabriela (pt-br)' },
   { value: 'pt-BR-Neural2-B', label: 'José (pt-br)' },
   { value: 'pt-BR-Neural2-C', label: 'Ravena (pt-br)' },
@@ -1325,10 +1325,10 @@ function applySuggestion(question) {
 /* Agent picker grid (empty state) */
 .agent-picker-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 12px;
   width: 100%;
-  max-width: 680px;
+  max-width: 860px;
 }
 
 /* Agent pick grid (new session dialog) */
@@ -1338,19 +1338,8 @@ function applySuggestion(question) {
   gap: 8px;
 }
 
-.agent-pick-card { transition: all .15s ease; }
-.agent-pick-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,.1); }
-
-.agent-card-skills {
-  overflow: hidden;
-  max-height: 0;
-  opacity: 0;
-  transition: max-height .2s ease, opacity .2s ease;
-}
-.agent-pick-card:hover .agent-card-skills {
-  max-height: 80px;
-  opacity: 1;
-}
+.agent-pick-card { transition: box-shadow .15s ease, transform .15s ease; }
+.agent-pick-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,.08) !important; }
 
 /* Suggestion chips row */
 .suggestions-row {
