@@ -302,6 +302,14 @@
               </v-btn>
               <v-btn
                 icon size="x-small" variant="text"
+                :color="speakingIdx === i ? 'primary' : undefined"
+                @click="speakMessage(msg.text, i)"
+              >
+                <v-icon size="15">{{ speakingIdx === i ? 'mdi-stop-circle-outline' : 'mdi-volume-high' }}</v-icon>
+                <v-tooltip activator="parent" location="top">{{ speakingIdx === i ? 'Parar leitura' : 'Ouvir mensagem' }}</v-tooltip>
+              </v-btn>
+              <v-btn
+                icon size="x-small" variant="text"
                 :color="ratings[modelSeqOf(i)] === 'up' ? 'success' : undefined"
                 :style="ratings[modelSeqOf(i)] && ratings[modelSeqOf(i)] !== 'up' ? 'opacity:.3' : ''"
                 @click="rateMessage(i, 'up')"
@@ -768,6 +776,7 @@ const listening       = ref(false)   // toggle mode: recording, click to stop
 const holdRecording   = ref(false)   // hold mode: recording while held
 const ttsEnabled      = ref(false)
 const ttsVoice        = ref('pt-BR-Wavenet-B')
+const speakingIdx     = ref(null)
 const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
 
 let currentAudio = null
@@ -888,6 +897,7 @@ watch(() => store.sessionId, () => {
   suggestions.value = []
   loadingSuggestions.value = false
   if (currentAudio) { currentAudio.pause(); currentAudio = null }
+  speakingIdx.value = null
   onMicCancel()
 })
 
@@ -1148,7 +1158,7 @@ function toggleTts() {
 async function speak(text) {
   if (!ttsEnabled.value || !text) return
   if (currentAudio) { currentAudio.pause(); currentAudio = null }
-
+  speakingIdx.value = null
   try {
     const resp = await fetch('/api/tts', {
       method: 'POST',
@@ -1160,6 +1170,30 @@ async function speak(text) {
     const url = URL.createObjectURL(blob)
     currentAudio = new Audio(url)
     currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null }
+    currentAudio.play()
+  } catch { /* silencioso */ }
+}
+
+async function speakMessage(text, idx) {
+  if (speakingIdx.value === idx) {
+    if (currentAudio) { currentAudio.pause(); currentAudio = null }
+    speakingIdx.value = null
+    return
+  }
+  if (currentAudio) { currentAudio.pause(); currentAudio = null }
+  speakingIdx.value = null
+  try {
+    const resp = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice: ttsVoice.value }),
+    })
+    if (!resp.ok) return
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    currentAudio = new Audio(url)
+    speakingIdx.value = idx
+    currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; speakingIdx.value = null }
     currentAudio.play()
   } catch { /* silencioso */ }
 }
