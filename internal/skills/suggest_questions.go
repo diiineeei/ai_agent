@@ -20,6 +20,7 @@ import (
 // com base no histórico da conversa e nas características do agente.
 type SuggestQuestionsSkill struct {
 	geminiClient *genai.Client
+	claudeAPIKey string
 	sessionRepo  repository.SessionRepository
 	agentConfig  model.AgentConfig
 	sessionID    string
@@ -27,12 +28,14 @@ type SuggestQuestionsSkill struct {
 
 func NewSuggestQuestionsSkill(
 	geminiClient *genai.Client,
+	claudeAPIKey string,
 	sessionRepo repository.SessionRepository,
 	agentConfig model.AgentConfig,
 	sessionID string,
 ) *SuggestQuestionsSkill {
 	return &SuggestQuestionsSkill{
 		geminiClient: geminiClient,
+		claudeAPIKey: claudeAPIKey,
 		sessionRepo:  sessionRepo,
 		agentConfig:  agentConfig,
 		sessionID:    sessionID,
@@ -69,7 +72,7 @@ func (s *SuggestQuestionsSkill) Declaration() *agent.FunctionDeclaration {
 
 func (s *SuggestQuestionsSkill) execute(ctx context.Context, args map[string]any) (map[string]any, error) {
 	focus, _ := args["focus"].(string)
-	questions, err := GenerateSuggestions(ctx, s.geminiClient, s.sessionRepo, s.agentConfig, s.sessionID, focus)
+	questions, err := GenerateSuggestions(ctx, s.geminiClient, s.claudeAPIKey, s.sessionRepo, s.agentConfig, s.sessionID, focus)
 	if err != nil {
 		return nil, err
 	}
@@ -77,10 +80,11 @@ func (s *SuggestQuestionsSkill) execute(ctx context.Context, args map[string]any
 }
 
 // GenerateSuggestions é a lógica compartilhada entre a skill e o handler HTTP.
-// Usa o provider do agente configurado: Gemini ou Ollama.
+// Usa o provider do agente configurado: Gemini, Ollama ou Claude.
 func GenerateSuggestions(
 	ctx context.Context,
 	geminiClient *genai.Client,
+	claudeAPIKey string,
 	sessionRepo repository.SessionRepository,
 	agentConfig model.AgentConfig,
 	sessionID string,
@@ -127,10 +131,14 @@ func GenerateSuggestions(
 		focusLine,
 	)
 
-	if agentConfig.Provider == "ollama" {
+	switch agentConfig.Provider {
+	case "ollama":
 		return generateWithOllama(ctx, agentConfig, prompt)
+	case "claude":
+		return generateWithClaude(ctx, claudeAPIKey, agentConfig.Model, prompt)
+	default:
+		return generateWithGemini(ctx, geminiClient, agentConfig.Model, prompt)
 	}
-	return generateWithGemini(ctx, geminiClient, agentConfig.Model, prompt)
 }
 
 func generateWithGemini(ctx context.Context, client *genai.Client, modelName, prompt string) ([]string, error) {
@@ -189,6 +197,15 @@ func generateWithOllama(ctx context.Context, agentConfig model.AgentConfig, prom
 	}
 
 	return parseQuestions(result.Message.Content), nil
+}
+
+func generateWithClaude(ctx context.Context, apiKey, modelName, prompt string) ([]string, error) {
+	a := agent.NewClaude(apiKey, modelName, "", nil)
+	result, _, err := a.Send(ctx, "", prompt)
+	if err != nil {
+		return nil, fmt.Errorf("chamando claude: %w", err)
+	}
+	return parseQuestions(result), nil
 }
 
 func parseQuestions(text string) []string {

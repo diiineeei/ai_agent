@@ -35,6 +35,7 @@ func visibleHistory(history []model.Content) []model.Content {
 
 type ChatHandler struct {
 	geminiClient    *genai.Client
+	claudeAPIKey    string
 	sessionRepo     repository.SessionRepository
 	agentConfigRepo repository.AgentConfigRepository
 	registry        *skills.SkillRegistry
@@ -42,12 +43,14 @@ type ChatHandler struct {
 
 func NewChatHandler(
 	geminiClient *genai.Client,
+	claudeAPIKey string,
 	sessionRepo repository.SessionRepository,
 	agentConfigRepo repository.AgentConfigRepository,
 	registry *skills.SkillRegistry,
 ) *ChatHandler {
 	return &ChatHandler{
 		geminiClient:    geminiClient,
+		claudeAPIKey:    claudeAPIKey,
 		sessionRepo:     sessionRepo,
 		agentConfigRepo: agentConfigRepo,
 		registry:        registry,
@@ -104,9 +107,12 @@ func (h *ChatHandler) SendPrompt(w http.ResponseWriter, r *http.Request) {
 		cfg.Name, cfg.Provider, cfg.Model, cfg.SystemInstruction)
 
 	var a agent.Agent
-	if cfg.Provider == "ollama" {
+	switch cfg.Provider {
+	case "ollama":
 		a = agent.NewOllama(cfg.BaseURL, cfg.Model, cfg.SystemInstruction, h.sessionRepo)
-	} else {
+	case "claude":
+		a = agent.NewClaude(h.claudeAPIKey, cfg.Model, cfg.SystemInstruction, h.sessionRepo)
+	default:
 		a = agent.NewWithRepo(h.geminiClient, cfg.Model, cfg.SystemInstruction, h.sessionRepo)
 	}
 

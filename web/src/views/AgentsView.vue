@@ -58,6 +58,15 @@
                   <v-icon start size="10">mdi-server-outline</v-icon>
                   Ollama
                 </v-chip>
+                <v-chip
+                  v-if="cfg.provider === 'claude'"
+                  size="x-small"
+                  variant="tonal"
+                  color="purple"
+                >
+                  <v-icon start size="10">mdi-robot-outline</v-icon>
+                  Claude
+                </v-chip>
               </div>
             </div>
           </div>
@@ -183,7 +192,7 @@
             <v-select
               v-model="form.provider"
               label="Provedor"
-              :items="[{ title: 'Gemini', value: 'gemini' }, { title: 'Ollama', value: 'ollama' }]"
+              :items="[{ title: 'Gemini', value: 'gemini' }, { title: 'Claude', value: 'claude' }, { title: 'Ollama', value: 'ollama' }]"
               variant="outlined"
               density="comfortable"
               prepend-inner-icon="mdi-server-outline"
@@ -429,21 +438,20 @@ const GEMINI_MODELS = [
   { title: 'gemini-2.5-pro',   subtitle: 'Mais capaz' },
 ]
 const OLLAMA_MODELS = [
-  { title: 'llama3.2',     subtitle: '~5 GB' },
-  { title: 'llama3.2:1b',  subtitle: '~1.3 GB · mais leve' },
-  { title: 'llama3.2:3b',  subtitle: '~2 GB' },
-  { title: 'llama3.1',     subtitle: '~5 GB' },
-  { title: 'qwen2.5',      subtitle: '~5 GB' },
-  { title: 'qwen2.5:3b',   subtitle: '~2 GB' },
-  { title: 'mistral',      subtitle: '~5 GB' },
-  { title: 'phi4',         subtitle: '~9 GB' },
-  { title: 'phi4-mini',    subtitle: '~2.5 GB' },
-  { title: 'gemma3',       subtitle: '~9 GB' },
+  { title: 'llama3.2:1b', subtitle: '~1.3 GB · mais leve' },
+  { title: 'gemma3',      subtitle: '~3.3 GB' },
+]
+const CLAUDE_MODELS = [
+  { title: 'claude-sonnet-4-6', subtitle: 'Rápido e capaz' },
+  { title: 'claude-opus-4-6',   subtitle: 'Mais capaz' },
+  { title: 'claude-haiku-4-5',  subtitle: 'Mais rápido e leve' },
 ]
 
-const modelSuggestions = computed(() =>
-  form.value.provider === 'ollama' ? OLLAMA_MODELS : GEMINI_MODELS
-)
+const modelSuggestions = computed(() => {
+  if (form.value.provider === 'ollama') return OLLAMA_MODELS
+  if (form.value.provider === 'claude') return CLAUDE_MODELS
+  return GEMINI_MODELS
+})
 
 const SKILL_META = {
   weather:           { label: 'Clima',              icon: 'mdi-weather-partly-cloudy' },
@@ -469,7 +477,9 @@ const form = ref(emptyForm())
 
 watch(() => form.value.provider, (provider, prev) => {
   if (provider === prev || skipProviderWatch.value) return
-  form.value.model = provider === 'ollama' ? OLLAMA_MODELS[0].title : GEMINI_MODELS[0].title
+  if (provider === 'ollama') form.value.model = OLLAMA_MODELS[0].title
+  else if (provider === 'claude') form.value.model = CLAUDE_MODELS[0].title
+  else form.value.model = GEMINI_MODELS[0].title
   if (provider !== 'ollama') form.value.base_url = ''
 })
 

@@ -112,13 +112,6 @@
                 <v-switch :model-value="ttsEnabled" color="primary" hide-details density="compact" @click.stop="toggleTts" />
               </template>
             </v-list-item>
-            <v-list-item
-              v-if="ttsEnabled"
-              prepend-icon="mdi-account-voice"
-              title="Selecionar voz"
-              rounded="lg"
-              @click="voiceDialog = true"
-            />
             <v-list-item rounded="lg" @click="showTokens = !showTokens">
               <template #prepend>
                 <v-icon class="mr-3">mdi-counter</v-icon>
@@ -628,32 +621,6 @@
     </v-card>
   </v-dialog>
 
-  <!-- ── Voice selector dialog ──────────────────────── -->
-  <v-dialog v-model="voiceDialog" max-width="360" scrollable>
-    <v-card rounded="lg">
-      <v-card-title class="pt-4">Selecionar voz</v-card-title>
-      <v-divider />
-      <v-card-text class="pa-0" style="max-height:360px">
-        <v-list density="compact" nav>
-          <v-list-item
-            v-for="v in ttsVoices"
-            :key="v.name"
-            :title="v.name"
-            :subtitle="v.lang"
-            :active="selectedVoice?.name === v.name"
-            active-color="primary"
-            rounded="lg"
-            @click="selectedVoice = v; voiceDialog = false"
-          />
-          <v-list-item v-if="ttsVoices.length === 0" title="Nenhuma voz disponível" disabled />
-        </v-list>
-      </v-card-text>
-      <v-card-actions>
-        <v-spacer />
-        <v-btn @click="voiceDialog = false">Fechar</v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
 
 
   <!-- ── Clear confirm dialog ────────────────────────── -->
@@ -755,23 +722,9 @@ watch(() => store.loading, (loading) => {
 const listening       = ref(false)   // toggle mode: recording, click to stop
 const holdRecording   = ref(false)   // hold mode: recording while held
 const ttsEnabled      = ref(false)
-const ttsVoices       = ref([])
-const selectedVoice   = ref(null)
 const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
 
-function loadVoices() {
-  const all = window.speechSynthesis.getVoices()
-  if (!all.length) return
-  ttsVoices.value = [
-    ...all.filter(v => v.lang.startsWith('pt')),
-    ...all.filter(v => !v.lang.startsWith('pt')),
-  ]
-  if (!selectedVoice.value) {
-    selectedVoice.value = ttsVoices.value.find(v => v.lang === 'pt-BR') ?? ttsVoices.value[0] ?? null
-  }
-}
-loadVoices()
-window.speechSynthesis.addEventListener('voiceschanged', loadVoices)
+let currentAudio = null
 
 let recognition = null
 let holdTimer    = null
@@ -854,7 +807,6 @@ const suggestions        = ref([])
 const loadingSuggestions = ref(false)
 
 const clearDialog      = ref(false)
-const voiceDialog      = ref(false)
 const sessionDialog    = ref(false)
 const newSessionDialog = ref(false)
 const manualSessionId  = ref('')
@@ -889,7 +841,7 @@ watch(() => store.sessionId, () => {
   ratings.value = {}
   suggestions.value = []
   loadingSuggestions.value = false
-  window.speechSynthesis?.cancel()
+  if (currentAudio) { currentAudio.pause(); currentAudio = null }
   onMicCancel()
 })
 
@@ -1144,17 +1096,26 @@ function scrollToBottom() {
 
 function toggleTts() {
   ttsEnabled.value = !ttsEnabled.value
-  if (!ttsEnabled.value) window.speechSynthesis.cancel()
+  if (!ttsEnabled.value && currentAudio) { currentAudio.pause(); currentAudio = null }
 }
 
-function speak(text) {
+async function speak(text) {
   if (!ttsEnabled.value || !text) return
-  window.speechSynthesis.cancel()
-  const utterance = new SpeechSynthesisUtterance(text)
-  if (selectedVoice.value) utterance.voice = selectedVoice.value
-  utterance.lang = selectedVoice.value?.lang ?? 'pt-BR'
-  utterance.rate = 1.05
-  window.speechSynthesis.speak(utterance)
+  if (currentAudio) { currentAudio.pause(); currentAudio = null }
+
+  try {
+    const resp = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+    if (!resp.ok) return
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    currentAudio = new Audio(url)
+    currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null }
+    currentAudio.play()
+  } catch { /* silencioso */ }
 }
 
 // ── Sugestões de perguntas ──────────────────────────────

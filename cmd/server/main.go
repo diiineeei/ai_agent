@@ -20,6 +20,8 @@ import (
 
 func main() {
 	apiKey := mustEnv("GEMINI_API_KEY")
+	claudeAPIKey := getEnv("ANTHROPIC_API_KEY", "")
+	ttsAPIKey := getEnv("GOOGLE_TTS_API_KEY", "/home/rodinei/src/github.com/diiineeei/ai_agent/rodinei-9f69e511f308.json")
 	defaultModel := getEnv("MODEL", "gemini-2.5-flash")
 	port := getEnv("HTTP_PORT", "8080")
 	mongoURI := getEnv("MONGODB_URI", "mongodb://localhost:27017")
@@ -97,14 +99,15 @@ func main() {
 	}
 
 	// Handlers
-	chatHandler := handler.NewChatHandler(geminiClient, sessionRepo, agentConfigRepo, registry)
+	chatHandler := handler.NewChatHandler(geminiClient, claudeAPIKey, sessionRepo, agentConfigRepo, registry)
 	fileHandler := handler.NewFileHandler(fileRepo, embedder)
 	skillHandler := handler.NewSkillHandler(skillRepo)
-	agentConfigHandler := handler.NewAgentConfigHandler(agentConfigRepo, geminiClient)
+	agentConfigHandler := handler.NewAgentConfigHandler(agentConfigRepo, geminiClient, claudeAPIKey)
 	feedbackHandler := handler.NewFeedbackHandler(feedbackRepo)
-	suggestHandler := handler.NewSuggestHandler(geminiClient, sessionRepo, agentConfigRepo)
-	chessHandler := handler.NewChessHandler(geminiClient, chessRepo, agentConfigRepo, sessionRepo)
+	suggestHandler := handler.NewSuggestHandler(geminiClient, claudeAPIKey, sessionRepo, agentConfigRepo)
+	chessHandler := handler.NewChessHandler(geminiClient, claudeAPIKey, chessRepo, agentConfigRepo, sessionRepo)
 	mcpServerHandler := handler.NewMcpServerHandler(mcpServerRepo)
+	ttsHandler := handler.NewTTSHandler(ttsAPIKey)
 
 	// Routes (Go 1.22+ ServeMux with method+pattern)
 	mux := http.NewServeMux()
@@ -139,6 +142,7 @@ func main() {
 	mux.HandleFunc("DELETE /mcp-servers/{id}", mcpServerHandler.Delete)
 	mux.HandleFunc("PUT /mcp-servers/{id}/toggle", mcpServerHandler.Toggle)
 	mux.HandleFunc("POST /mcp-servers/{id}/ping", mcpServerHandler.Ping)
+	mux.HandleFunc("POST /tts", ttsHandler.Speak)
 
 	log.Printf("servidor iniciado em :%s", port)
 	if err := http.ListenAndServe(":"+port, mux); err != nil {

@@ -11,17 +11,20 @@ import (
 
 type SuggestHandler struct {
 	geminiClient    *genai.Client
+	claudeAPIKey    string
 	sessionRepo     repository.SessionRepository
 	agentConfigRepo repository.AgentConfigRepository
 }
 
 func NewSuggestHandler(
 	geminiClient *genai.Client,
+	claudeAPIKey string,
 	sessionRepo repository.SessionRepository,
 	agentConfigRepo repository.AgentConfigRepository,
 ) *SuggestHandler {
 	return &SuggestHandler{
 		geminiClient:    geminiClient,
+		claudeAPIKey:    claudeAPIKey,
 		sessionRepo:     sessionRepo,
 		agentConfigRepo: agentConfigRepo,
 	}
@@ -68,7 +71,7 @@ func (h *SuggestHandler) Suggest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	questions, err := skills.GenerateSuggestions(ctx, h.geminiClient, h.sessionRepo, *cfg, sessionID, "")
+	questions, err := skills.GenerateSuggestions(ctx, h.geminiClient, h.claudeAPIKey, h.sessionRepo, *cfg, sessionID, "")
 	if err != nil {
 		jsonError(w, "erro ao gerar sugestões: "+err.Error(), http.StatusInternalServerError)
 		return

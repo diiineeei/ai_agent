@@ -17,6 +17,7 @@ import (
 
 type ChessHandler struct {
 	geminiClient    *genai.Client
+	claudeAPIKey    string
 	chessRepo       repository.ChessRepository
 	agentConfigRepo repository.AgentConfigRepository
 	sessionRepo     repository.SessionRepository
@@ -24,12 +25,14 @@ type ChessHandler struct {
 
 func NewChessHandler(
 	geminiClient *genai.Client,
+	claudeAPIKey string,
 	chessRepo repository.ChessRepository,
 	agentConfigRepo repository.AgentConfigRepository,
 	sessionRepo repository.SessionRepository,
 ) *ChessHandler {
 	return &ChessHandler{
 		geminiClient:    geminiClient,
+		claudeAPIKey:    claudeAPIKey,
 		chessRepo:       chessRepo,
 		agentConfigRepo: agentConfigRepo,
 		sessionRepo:     sessionRepo,
@@ -154,9 +157,12 @@ func (h *ChessHandler) Move(w http.ResponseWriter, r *http.Request) {
 
 	// Chama agente sem skills e sem histórico de chat
 	var a agent.Agent
-	if cfg.Provider == "ollama" {
+	switch cfg.Provider {
+	case "ollama":
 		a = agent.NewOllama(cfg.BaseURL, cfg.Model, cfg.SystemInstruction, nil)
-	} else {
+	case "claude":
+		a = agent.NewClaude(h.claudeAPIKey, cfg.Model, cfg.SystemInstruction, nil)
+	default:
 		a = agent.NewWithRepo(h.geminiClient, cfg.Model, cfg.SystemInstruction, nil)
 	}
 

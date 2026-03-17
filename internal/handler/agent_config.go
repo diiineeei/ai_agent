@@ -16,10 +16,11 @@ import (
 type AgentConfigHandler struct {
 	repo         repository.AgentConfigRepository
 	geminiClient *genai.Client
+	claudeAPIKey string
 }
 
-func NewAgentConfigHandler(repo repository.AgentConfigRepository, geminiClient *genai.Client) *AgentConfigHandler {
-	return &AgentConfigHandler{repo: repo, geminiClient: geminiClient}
+func NewAgentConfigHandler(repo repository.AgentConfigRepository, geminiClient *genai.Client, claudeAPIKey string) *AgentConfigHandler {
+	return &AgentConfigHandler{repo: repo, geminiClient: geminiClient, claudeAPIKey: claudeAPIKey}
 }
 
 // List handles GET /agent-configs
@@ -127,8 +128,18 @@ Instrução:
 
 	ctx := r.Context()
 
-	if body.Provider == "ollama" {
+	switch body.Provider {
+	case "ollama":
 		a := agent.NewOllama(body.BaseURL, body.Model, "", nil)
+		result, _, err := a.Send(ctx, "", prompt)
+		if err != nil {
+			jsonError(w, "erro ao chamar o modelo: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]string{"instruction": strings.TrimSpace(result)})
+		return
+	case "claude":
+		a := agent.NewClaude(h.claudeAPIKey, body.Model, "", nil)
 		result, _, err := a.Send(ctx, "", prompt)
 		if err != nil {
 			jsonError(w, "erro ao chamar o modelo: "+err.Error(), http.StatusInternalServerError)
