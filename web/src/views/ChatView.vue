@@ -39,34 +39,71 @@
             title="Voz do agente"
             v-bind="ttsMenuProps"
           >
-            <v-icon size="22">{{ ttsEnabled ? 'mdi-volume-high' : 'mdi-volume-off' }}</v-icon>
+            <v-icon size="22">{{
+              !ttsEnabled ? 'mdi-volume-off'
+              : ttsVolume === 0 ? 'mdi-volume-mute'
+              : ttsVolume < 0.4 ? 'mdi-volume-low'
+              : ttsVolume < 0.75 ? 'mdi-volume-medium'
+              : 'mdi-volume-high'
+            }}</v-icon>
           </v-btn>
         </template>
-        <v-card rounded="lg">
-          <v-list density="compact" nav>
+        <v-card rounded="lg" min-width="270">
+          <!-- Toggle -->
+          <v-list density="compact" nav class="pb-0">
             <v-list-subheader>Voz do agente</v-list-subheader>
             <v-list-item rounded="lg" @click="toggleTts">
               <template #prepend>
                 <v-icon class="mr-3">{{ ttsEnabled ? 'mdi-volume-high' : 'mdi-volume-off' }}</v-icon>
               </template>
-              <v-list-item-title>Leitura em voz alta</v-list-item-title>
+              <v-list-item-title>Falar</v-list-item-title>
               <template #append>
                 <v-switch :model-value="ttsEnabled" color="primary" hide-details density="compact" @click.stop="toggleTts" />
               </template>
             </v-list-item>
-            <v-list-item rounded="lg">
-              <v-select
-                v-model="ttsVoice"
-                :items="TTS_VOICES"
-                item-title="label"
-                item-value="value"
-                label="Voz"
-                variant="outlined"
-                density="compact"
-                hide-details
-              />
-            </v-list-item>
           </v-list>
+
+          <v-divider />
+
+          <!-- Volume -->
+          <div class="px-4 py-3">
+            <div class="text-caption text-medium-emphasis mb-1">Volume</div>
+            <div class="d-flex align-center gap-2">
+              <v-icon size="18" color="medium-emphasis">{{
+                ttsVolume === 0 ? 'mdi-volume-mute'
+                : ttsVolume < 0.4 ? 'mdi-volume-low'
+                : ttsVolume < 0.75 ? 'mdi-volume-medium'
+                : 'mdi-volume-high'
+              }}</v-icon>
+              <v-slider
+                v-model="ttsVolume"
+                :min="0" :max="1" :step="0.05"
+                color="primary"
+                hide-details
+                density="compact"
+                class="flex-grow-1"
+              />
+              <span class="text-caption text-medium-emphasis" style="min-width:32px;text-align:right">
+                {{ Math.round(ttsVolume * 100) }}%
+              </span>
+            </div>
+          </div>
+
+          <v-divider />
+
+          <!-- Voz -->
+          <div class="px-4 py-3">
+            <div class="text-caption text-medium-emphasis mb-2">Voz</div>
+            <v-select
+              v-model="ttsVoice"
+              :items="TTS_VOICES"
+              item-title="label"
+              item-value="value"
+              variant="outlined"
+              density="compact"
+              hide-details
+            />
+          </div>
         </v-card>
       </v-menu>
 
@@ -193,7 +230,7 @@
 
         <!-- No agent selected: show agent picker -->
         <template v-else>
-          <v-icon size="48" color="primary" style="opacity:.3" class="mb-4">mdi-robot-happy</v-icon>
+          <v-icon size="44" color="primary" style="opacity:.3" class="mb-3">mdi-robot-happy</v-icon>
           <p class="text-h6 font-weight-regular mb-1">Escolha um agente para começar</p>
           <p class="text-body-2 text-medium-emphasis mb-6">Selecione com qual assistente deseja conversar</p>
 
@@ -206,31 +243,32 @@
               class="agent-pick-card cursor-pointer"
               @click="pickAgent(cfg)"
             >
-              <div class="pa-4 d-flex align-center gap-3">
-                <v-avatar color="primary" variant="tonal" size="44" class="flex-shrink-0">
-                  <v-img v-if="cfg.avatar" :src="cfg.avatar" cover />
-                  <span v-else class="text-body-1 font-weight-bold">{{ cfg.name[0].toUpperCase() }}</span>
-                </v-avatar>
-                <div class="overflow-hidden flex-grow-1">
-                  <div class="text-body-2 font-weight-bold text-truncate">{{ cfg.name }}</div>
-                  <div class="d-flex align-center gap-1 mt-1 flex-wrap">
-                    <v-chip size="x-small" variant="tonal" color="secondary">
-                      <v-icon start size="10">mdi-chip</v-icon>
-                      {{ cfg.model }}
-                    </v-chip>
-                    <v-chip v-if="cfg.provider === 'ollama'" size="x-small" variant="tonal" color="orange">
-                      <v-icon start size="10">mdi-server-outline</v-icon>
-                      Ollama
-                    </v-chip>
+              <div class="pa-4">
+                <div class="d-flex align-center gap-3">
+                  <v-avatar color="primary" variant="tonal" size="40" class="flex-shrink-0">
+                    <v-img v-if="cfg.avatar" :src="cfg.avatar" cover />
+                    <span v-else class="text-body-2 font-weight-bold">{{ cfg.name[0].toUpperCase() }}</span>
+                  </v-avatar>
+                  <div class="overflow-hidden flex-grow-1">
+                    <div class="text-body-2 font-weight-bold text-truncate">{{ cfg.name }}</div>
+                    <div class="d-flex align-center gap-1 mt-1 flex-wrap">
+                      <v-chip size="x-small" variant="tonal" color="secondary">
+                        <v-icon start size="10">mdi-chip</v-icon>
+                        {{ cfg.model }}
+                      </v-chip>
+                      <v-chip v-if="cfg.provider === 'ollama'" size="x-small" variant="tonal" color="orange">
+                        <v-icon start size="10">mdi-server-outline</v-icon>
+                        Ollama
+                      </v-chip>
+                    </div>
                   </div>
+                  <v-icon size="16" color="medium-emphasis" class="flex-shrink-0">mdi-chevron-right</v-icon>
                 </div>
-                <v-icon size="18" color="medium-emphasis">mdi-chevron-right</v-icon>
-              </div>
-
-              <!-- Skills reveladas no hover -->
-              <div class="agent-card-skills px-4 pb-3">
-                <v-divider class="mb-2" />
-                <div class="d-flex flex-wrap gap-1">
+                <div
+                  v-if="cfg.enabled_skills?.length || cfg.mcp_server_ids?.length"
+                  class="d-flex flex-wrap gap-1 mt-3 pt-3"
+                  style="border-top: 1px solid rgba(0,0,0,.06)"
+                >
                   <v-chip
                     v-for="s in cfg.enabled_skills"
                     :key="s"
@@ -247,12 +285,11 @@
                     color="secondary"
                     prepend-icon="mdi-connection"
                   >{{ mcpName(mid) }}</v-chip>
-                  <span v-if="!cfg.enabled_skills?.length && !cfg.mcp_server_ids?.length" class="text-caption text-disabled">Nenhuma skill</span>
                 </div>
               </div>
             </v-card>
 
-            <div v-if="!agentConfigsStore.configs.length" class="text-center text-medium-emphasis">
+            <div v-if="!agentConfigsStore.configs.length" class="text-center text-medium-emphasis" style="grid-column: 1 / -1">
               <p class="text-body-2">Nenhum agente cadastrado.</p>
             </div>
           </div>
@@ -303,6 +340,8 @@
               <v-btn
                 icon size="x-small" variant="text"
                 :color="speakingIdx === i ? 'primary' : undefined"
+                :loading="loadingTtsIdx === i"
+                :disabled="loadingTtsIdx !== null && loadingTtsIdx !== i"
                 @click="speakMessage(msg.text, i)"
               >
                 <v-icon size="15">{{ speakingIdx === i ? 'mdi-stop-circle-outline' : 'mdi-volume-high' }}</v-icon>
@@ -761,15 +800,14 @@ watch(() => store.loading, (loading) => {
 
 // ── Voice ──────────────────────────────────────────────
 const TTS_VOICES = [
-  { value: 'pt-BR-Wavenet-B', label: 'Wavenet B — Masculino' },
-  { value: 'pt-BR-Wavenet-A', label: 'Wavenet A — Feminino' },
-  { value: 'pt-BR-Wavenet-C', label: 'Wavenet C — Feminino' },
-  { value: 'pt-BR-Wavenet-D', label: 'Wavenet D — Masculino' },
-  { value: 'pt-BR-Wavenet-E', label: 'Wavenet E — Feminino' },
-  { value: 'pt-BR-Neural2-B', label: 'Neural2 B — Masculino' },
-  { value: 'pt-BR-Neural2-C', label: 'Neural2 C — Feminino' },
-  { value: 'pt-BR-Studio-B',  label: 'Studio B — Masculino' },
-  { value: 'pt-BR-Studio-C',  label: 'Studio C — Feminino' },
+  { value: 'pt-BR-Wavenet-B', label: 'Rogerinho (pt-br)' },
+  { value: 'pt-BR-Wavenet-A', label: 'Claudia (pt-br)' },
+  { value: 'pt-BR-Wavenet-C', label: 'Genevivi (pt-br)' },
+  { value: 'pt-BR-Wavenet-D', label: 'Paulo (pt-br)' },
+  { value: 'pt-BR-Wavenet-E', label: 'Gabriela (pt-br)' },
+  { value: 'pt-BR-Neural2-B', label: 'José (pt-br)' },
+  { value: 'pt-BR-Neural2-C', label: 'Ravena (pt-br)' },
+  { value: 'pt-BR-Studio-B',  label: 'Rubens (pt-br)' },
 ]
 
 const listening       = ref(false)   // toggle mode: recording, click to stop
@@ -777,6 +815,8 @@ const holdRecording   = ref(false)   // hold mode: recording while held
 const ttsEnabled      = ref(false)
 const ttsVoice        = ref('pt-BR-Wavenet-B')
 const speakingIdx     = ref(null)
+const loadingTtsIdx   = ref(null)
+const ttsVolume       = ref(1)
 const speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition)
 
 let currentAudio = null
@@ -898,6 +938,7 @@ watch(() => store.sessionId, () => {
   loadingSuggestions.value = false
   if (currentAudio) { currentAudio.pause(); currentAudio = null }
   speakingIdx.value = null
+  loadingTtsIdx.value = null
   onMicCancel()
 })
 
@@ -1169,6 +1210,7 @@ async function speak(text) {
     const blob = await resp.blob()
     const url = URL.createObjectURL(blob)
     currentAudio = new Audio(url)
+    currentAudio.volume = ttsVolume.value
     currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null }
     currentAudio.play()
   } catch { /* silencioso */ }
@@ -1182,20 +1224,25 @@ async function speakMessage(text, idx) {
   }
   if (currentAudio) { currentAudio.pause(); currentAudio = null }
   speakingIdx.value = null
+  loadingTtsIdx.value = idx
   try {
     const resp = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, voice: ttsVoice.value }),
     })
+    loadingTtsIdx.value = null
     if (!resp.ok) return
     const blob = await resp.blob()
     const url = URL.createObjectURL(blob)
     currentAudio = new Audio(url)
+    currentAudio.volume = ttsVolume.value
     speakingIdx.value = idx
     currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; speakingIdx.value = null }
     currentAudio.play()
-  } catch { /* silencioso */ }
+  } catch {
+    loadingTtsIdx.value = null
+  }
 }
 
 // ── Sugestões de perguntas ──────────────────────────────
